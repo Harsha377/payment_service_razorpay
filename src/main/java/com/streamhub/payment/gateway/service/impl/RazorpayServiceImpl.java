@@ -1,0 +1,90 @@
+package com.streamhub.payment.gateway.service.impl;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.razorpay.*;
+import com.streamhub.payment.common.exception.ApiException;
+import com.streamhub.payment.common.exception.BadRequestException;
+import com.streamhub.payment.gateway.dto.request.GatewayOrderRequest;
+import com.streamhub.payment.gateway.dto.request.GatewayPaymentVerificationRequest;
+import com.streamhub.payment.gateway.dto.response.GatewayOrderResponse;
+import com.streamhub.payment.gateway.dto.response.GatewayPaymentDetailsResponse;
+import com.streamhub.payment.gateway.properties.RazorpayProperties;
+import com.streamhub.payment.gateway.service.RazorpayService;
+import com.streamhub.payment.gateway.util.RazorpayPaymentMethodMapper;
+import com.streamhub.payment.payment.enums.PaymentGateway;
+import com.streamhub.payment.payment.enums.PaymentMethod;
+import lombok.RequiredArgsConstructor;
+import org.json.JSONObject;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+
+public class RazorpayServiceImpl implements RazorpayService {
+
+    private final RazorpayClient razorpayClient;
+    private final RazorpayProperties razorpayProperties;
+    private final ObjectMapper objectMapper;
+    @Override
+    public GatewayOrderResponse createOrder(GatewayOrderRequest request)  {
+        try {
+            JSONObject orderRequest = new JSONObject();
+
+            orderRequest.put("amount", request.getAmount());
+            orderRequest.put("currency", request.getCurrency());
+            orderRequest.put("receipt", request.getReceipt());
+            Order order = razorpayClient.orders.create(orderRequest);
+            return GatewayOrderResponse.builder()
+                    .gatewayOrderId(order.get("id"))
+                    .gatewayName(PaymentGateway.RAZORPAY.name())
+                    .status(order.get("status"))
+                    .keyId(razorpayProperties.getKeyId())
+                    .build();
+        }
+        catch (RazorpayException ex) {
+            throw new ApiException(
+                    "Failed to create Razorpay order.",
+                    HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    @Override
+    public void verifyPayment(GatewayPaymentVerificationRequest request) {
+
+        try {
+            JSONObject attributes = new JSONObject();
+            attributes.put("razorpay_order_id", request.getGatewayOrderId());
+            attributes.put("razorpay_payment_id", request.getGatewayPaymentId());
+            attributes.put("razorpay_signature", request.getGatewaySignature());
+
+            Utils.verifyPaymentSignature(attributes, razorpayProperties.getKeySecret());
+
+        } catch (RazorpayException ex) {
+            throw new BadRequestException("Invalid payment signature.");
+        }
+    }
+
+    @Override
+    public GatewayPaymentDetailsResponse fetchPayment(String gatewayPaymentId){
+      try {
+          Payment payment = razorpayClient.payments.fetch(gatewayPaymentId);
+         JsonNode gatewayResponse= objectMapper.readTree(payment.toString());
+         return GatewayPaymentDetailsResponse.builder()
+                 .paymentMethod(RazorpayPaymentMethodMapper.map(payment.get("method")))
+                 .gatewayStatus(payment.get("status"))
+                 .gatewayResponse(gatewayResponse).build();
+      }
+      catch (Exception ex) {
+
+          throw new ApiException(
+                  "Failed to fetch payment details from Razorpay.",
+                  HttpStatus.INTERNAL_SERVER_ERROR
+          );
+
+      }
+
+    }
+}
