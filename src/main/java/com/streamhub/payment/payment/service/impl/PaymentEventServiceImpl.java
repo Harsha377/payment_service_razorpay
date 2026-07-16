@@ -50,6 +50,14 @@ public class PaymentEventServiceImpl implements PaymentEventService {
 
     @Override
     public void recordPaymentFailed(PaymentEntity payment) {
+        PaymentEventEntity event = new PaymentEventEntity();
+        event.setPaymentEventReference(UlidGenerator.generate());
+        event.setPayment(payment);
+        event.setEventType(PaymentEventType.PAYMENT_FAILED);
+        event.setEventSource(PaymentEventSource.WEBHOOK);
+        event.setEventData(payment.getGatewayResponse());
+        paymentEventRepository.save(event);
+
 
     }
 

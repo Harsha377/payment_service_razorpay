@@ -7,28 +7,30 @@ import com.streamhub.payment.common.exception.ApiException;
 import com.streamhub.payment.common.exception.BadRequestException;
 import com.streamhub.payment.gateway.dto.request.GatewayOrderRequest;
 import com.streamhub.payment.gateway.dto.request.GatewayPaymentVerificationRequest;
+import com.streamhub.payment.gateway.dto.request.GatewayWebhookVerificationRequest;
 import com.streamhub.payment.gateway.dto.response.GatewayOrderResponse;
 import com.streamhub.payment.gateway.dto.response.GatewayPaymentDetailsResponse;
 import com.streamhub.payment.gateway.properties.RazorpayProperties;
 import com.streamhub.payment.gateway.service.RazorpayService;
 import com.streamhub.payment.gateway.util.RazorpayPaymentMethodMapper;
 import com.streamhub.payment.payment.enums.PaymentGateway;
-import com.streamhub.payment.payment.enums.PaymentMethod;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
-
+@Slf4j
 public class RazorpayServiceImpl implements RazorpayService {
 
     private final RazorpayClient razorpayClient;
     private final RazorpayProperties razorpayProperties;
     private final ObjectMapper objectMapper;
+
     @Override
-    public GatewayOrderResponse createOrder(GatewayOrderRequest request)  {
+    public GatewayOrderResponse createOrder(GatewayOrderRequest request) {
         try {
             JSONObject orderRequest = new JSONObject();
 
@@ -42,8 +44,7 @@ public class RazorpayServiceImpl implements RazorpayService {
                     .status(order.get("status"))
                     .keyId(razorpayProperties.getKeyId())
                     .build();
-        }
-        catch (RazorpayException ex) {
+        } catch (RazorpayException ex) {
             throw new ApiException(
                     "Failed to create Razorpay order.",
                     HttpStatus.INTERNAL_SERVER_ERROR
@@ -68,23 +69,45 @@ public class RazorpayServiceImpl implements RazorpayService {
     }
 
     @Override
-    public GatewayPaymentDetailsResponse fetchPayment(String gatewayPaymentId){
-      try {
-          Payment payment = razorpayClient.payments.fetch(gatewayPaymentId);
-         JsonNode gatewayResponse= objectMapper.readTree(payment.toString());
-         return GatewayPaymentDetailsResponse.builder()
-                 .paymentMethod(RazorpayPaymentMethodMapper.map(payment.get("method")))
-                 .gatewayStatus(payment.get("status"))
-                 .gatewayResponse(gatewayResponse).build();
-      }
-      catch (Exception ex) {
+    public GatewayPaymentDetailsResponse fetchPayment(String gatewayPaymentId) {
+        try {
+            Payment payment = razorpayClient.payments.fetch(gatewayPaymentId);
+            JsonNode gatewayResponse = objectMapper.readTree(payment.toString());
+            return GatewayPaymentDetailsResponse.builder()
+                    .paymentMethod(RazorpayPaymentMethodMapper.map(payment.get("method")))
+                    .gatewayStatus(payment.get("status"))
+                    .gatewayResponse(gatewayResponse).build();
+        } catch (Exception ex) {
 
-          throw new ApiException(
-                  "Failed to fetch payment details from Razorpay.",
-                  HttpStatus.INTERNAL_SERVER_ERROR
-          );
+            throw new ApiException(
+                    "Failed to fetch payment details from Razorpay.",
+                    HttpStatus.INTERNAL_SERVER_ERROR
+            );
 
-      }
+        }
 
     }
+
+    @Override
+    public void verifyWebhookSignature(GatewayWebhookVerificationRequest request) {
+        try {
+            boolean verified = Utils.verifyWebhookSignature(
+                    request.getPayload(),
+                    request.getSignature(),
+                    razorpayProperties.getWebhookSecret());
+
+            if (!verified) {
+                throw new BadRequestException("Invalid webhook signature.");
+            }
+
+            log.info("Webhook signature verified successfully.");
+
+        } catch (RazorpayException ex) {
+            throw new BadRequestException("Unable to verify webhook signature.");
+
+        }
+
+    }
+
+
 }

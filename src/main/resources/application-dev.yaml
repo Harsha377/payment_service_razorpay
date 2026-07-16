@@ -26,5 +26,6 @@ logging:
 
 
 razorpay:
-  key-id: rzp_test_TCtwQyWAY16WYZ
-  key-secret: SK5CodreYEPw3HJjLgfV4WuG
+  key-id: rzp_test_TDkKVHb2ziU8GG
+  key-secret: cnwWnA2OrcL8lR9m3dxwhnXj
+  webhook-secret: qspQ_HW4hxV9BSt
