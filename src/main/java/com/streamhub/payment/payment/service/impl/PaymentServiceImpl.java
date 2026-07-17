@@ -1,7 +1,6 @@
 package com.streamhub.payment.payment.service.impl;
 
 import com.streamhub.payment.common.exception.BadRequestException;
-import com.streamhub.payment.common.exception.ConflictException;
 import com.streamhub.payment.common.exception.ResourceNotFoundException;
 import com.streamhub.payment.common.util.UlidGenerator;
 import com.streamhub.payment.gateway.dto.request.GatewayPaymentVerificationRequest;
@@ -51,9 +50,17 @@ public class PaymentServiceImpl implements PaymentService {
 
         // Prevent Duplicate Verification
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
-            log.warn("Payment already verified. Payment Reference: {}",
+
+            log.info("Payment already verified. Payment Reference: {}",
                     payment.getPaymentReference());
-            throw new ConflictException("Payment is already verified.");
+
+            return VerifyPaymentResponse.builder()
+                    .paymentReference(payment.getPaymentReference())
+                    .paymentIntentReference(payment.getPaymentIntent().getPaymentIntentReference())
+                    .gatewayPaymentId(payment.getGatewayPaymentId())
+                    .status(payment.getStatus())
+                    .message("Payment already verified.")
+                    .build();
         }
 
         // Validate Current Payment State
