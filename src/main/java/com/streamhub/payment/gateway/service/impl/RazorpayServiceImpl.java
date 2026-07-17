@@ -7,9 +7,12 @@ import com.streamhub.payment.common.exception.ApiException;
 import com.streamhub.payment.common.exception.BadRequestException;
 import com.streamhub.payment.gateway.dto.request.GatewayOrderRequest;
 import com.streamhub.payment.gateway.dto.request.GatewayPaymentVerificationRequest;
+import com.streamhub.payment.gateway.dto.request.GatewayRefundRequest;
 import com.streamhub.payment.gateway.dto.request.GatewayWebhookVerificationRequest;
 import com.streamhub.payment.gateway.dto.response.GatewayOrderResponse;
 import com.streamhub.payment.gateway.dto.response.GatewayPaymentDetailsResponse;
+import com.streamhub.payment.gateway.dto.response.GatewayRefundDetailsResponse;
+import com.streamhub.payment.gateway.dto.response.GatewayRefundResponse;
 import com.streamhub.payment.gateway.properties.RazorpayProperties;
 import com.streamhub.payment.gateway.service.RazorpayService;
 import com.streamhub.payment.gateway.util.RazorpayPaymentMethodMapper;
@@ -109,5 +112,80 @@ public class RazorpayServiceImpl implements RazorpayService {
 
     }
 
+    @Override
+    public GatewayRefundResponse createRefund(GatewayRefundRequest request) {
+       try{
+           JSONObject refundRequest=buildRefundRequest(request);
+          Refund refund=razorpayClient.payments.refund(request.getGatewayPaymentId(),refundRequest);
+          return mapRefundResponse(refund);
+       }
+       catch (RazorpayException ex){
+           log.error("Failed to create Razorpay refund. Gateway Payment Id: {}",
+                   request.getGatewayPaymentId(), ex);
+           throw new ApiException( "Failed to create Razorpay refund.",HttpStatus.INTERNAL_SERVER_ERROR);
+       }
+    }
+
+    @Override
+    public GatewayRefundDetailsResponse fetchRefund(String gatewayRefundId) {
+       try{
+           Refund refund=razorpayClient.refunds.fetch(gatewayRefundId);
+           return mapRefundDetailsResponse(refund);
+       }
+       catch (RazorpayException ex){
+           log.error("Failed to fetch Razorpay refund. Gateway Refund Id: {}",gatewayRefundId,ex);
+           throw new ApiException("Failed to fetch refund details from Razorpay.",HttpStatus.INTERNAL_SERVER_ERROR);
+       }
+    }
+
+    private JSONObject buildRefundRequest(GatewayRefundRequest request){
+        JSONObject refundRequest=new JSONObject();
+        refundRequest.put("amount",request.getAmount());
+        refundRequest.put("speed",request.getSpeed().name().toLowerCase());
+        if (request.getNotes()!=null){
+            refundRequest.put("notes",new JSONObject(request.getNotes().toString()));
+        }
+        return refundRequest;
+    }
+
+    private GatewayRefundResponse mapRefundResponse(Refund refund){
+        return GatewayRefundResponse.builder()
+                .gatewayRefundId(refund.get("id"))
+                .gatewayStatus(refund.get("status"))
+                .build();
+    }
+    private GatewayRefundDetailsResponse mapRefundDetailsResponse(Refund refund){
+       try{
+           JsonNode gatewayResponse=objectMapper.readTree(refund.toString());
+           JsonNode gatewayNotes = gatewayResponse.path("notes");
+           return GatewayRefundDetailsResponse.builder()
+                   .gatewayRefundId(refund.get("id"))
+                   .gatewayStatus(refund.get("status"))
+                   .gatewayResponse(gatewayResponse)
+                   .gatewayNotes(gatewayNotes.isMissingNode()?null:gatewayNotes)
+                   .build();
+       }
+       catch (Exception ex){
+          throw new ApiException( "Failed to map Razorpay refund response.",
+                  HttpStatus.INTERNAL_SERVER_ERROR);
+       }
+    }
+
 
 }
+
+/*
+RazorpayService
+
+├── createOrder()
+
+├── verifyPayment()
+
+├── fetchPayment()
+
+├── verifyWebhookSignature()
+
+├── createRefund()
+
+└── fetchRefund()
+ */
