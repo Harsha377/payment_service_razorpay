@@ -1,11 +1,10 @@
 package com.streamhub.payment.payment.entity;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.streamhub.payment.common.entity.BaseEntity;
+import com.streamhub.payment.common.entity.EventBaseEntity;
 import com.streamhub.payment.payment.enums.PaymentEventSource;
 import com.streamhub.payment.payment.enums.PaymentEventType;
 import jakarta.persistence.*;
-import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -17,7 +16,7 @@ import org.hibernate.type.SqlTypes;
 @NoArgsConstructor
 @Entity
 @Table(name = "payment_events")
-public class PaymentEventEntity extends BaseEntity {
+public class PaymentEventEntity extends EventBaseEntity {
 
     @Column(name = "payment_event_reference", nullable = false, length = 26)
     private String paymentEventReference;
