@@ -624,9 +624,54 @@ Implemented
 - Payment Intent
 - Payment Verification
 
+## Webhook Decisions
+
+### Auto Capture
+
+The Payment Service currently uses Razorpay Auto Capture.
+
+Manual Capture is reserved for future implementation.
+
+---
+
+### Source of Truth
+
+The `payment.captured` webhook is considered the source of truth for successful payment completion.
+
+The application updates Payment and Payment Intent only after receiving this event.
+
+---
+
+### payment.authorized
+
+The `payment.authorized` event is currently treated as an informational event.
+
+No database updates are performed because Auto Capture is enabled.
+
+---
+
+### order.paid
+
+The `order.paid` event is also treated as an informational event.
+
+Payment completion has already been processed during `payment.captured`.
+
+---
+
+### Signature Verification
+
+Every incoming webhook is verified using Razorpay's HMAC SHA256 signature verification before any business logic is executed.
+
+---
+
+### Event Processing
+
+Each supported webhook event is processed independently using dedicated handler methods.
+
+This design improves maintainability and simplifies future webhook expansion.
+
 Not Yet Implemented
 
-- Webhooks
 - Refunds
 - Payouts
 - Read APIs

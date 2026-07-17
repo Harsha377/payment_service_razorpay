@@ -20,7 +20,7 @@ Each phase represents a functional milestone.
 | Phase 4 – Business Layer | ✅ Completed |
 | Phase 5 – Payment Intent Flow | ✅ Completed |
 | Phase 6 – Payment Verification Flow | ✅ Completed |
-| Phase 7 – Razorpay Webhooks | ⏳ Pending |
+| Phase 7 – Razorpay Webhooks | ✅ Pending |
 | Phase 8 – Read APIs | ⏳ Pending |
 | Phase 9 – Testing | ⏳ Pending |
 | Phase 10 – Production Hardening | ⏳ Pending |
@@ -403,6 +403,8 @@ Planned Work
 - Secret Management
 - Vault Integration
 
+
+
 ---
 
 ## Performance
@@ -488,6 +490,29 @@ Implementation
 - Gateway Configuration
 
 ---
+
+## Future Webhook Enhancements
+
+The following webhook events are planned for future releases.
+
+- Refund Webhooks
+- Settlement Webhooks
+- Payout Webhooks
+- Dispute Webhooks
+- Subscription Webhooks
+
+---
+
+## Future Payment Enhancements
+
+- Manual Capture Support
+- Gateway Fee Tracking
+- Net Settlement Amount
+- Merchant Account Tracking
+- Settlement Reconciliation
+- Payment Mismatch Review Workflow
+- Fraud Detection
+- Payment Retry Analytics
 
 # Future Improvements
 

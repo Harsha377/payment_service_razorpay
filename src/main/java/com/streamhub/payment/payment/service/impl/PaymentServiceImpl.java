@@ -21,11 +21,13 @@ import com.streamhub.payment.payment.repository.PaymentRepository;
 import com.streamhub.payment.payment.service.PaymentEventService;
 import com.streamhub.payment.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -39,23 +41,28 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     public VerifyPaymentResponse verifyPayment(VerifyPaymentRequest request) {
 
-        // 1. Find Payment
+        log.info("Verifying payment. Gateway Order Id: {}",
+                request.getGatewayOrderId());
+        // Find Payment
         PaymentEntity payment = paymentRepository
                 .findByGatewayOrderId(request.getGatewayOrderId())
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Payment not found."));
 
-        // 2. Prevent Duplicate Verification
+        // Prevent Duplicate Verification
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
+            log.warn("Payment already verified. Payment Reference: {}",
+                    payment.getPaymentReference());
             throw new ConflictException("Payment is already verified.");
         }
 
-        // 3. Validate Current Payment State
+        // Validate Current Payment State
         if (payment.getStatus() != PaymentStatus.CREATED) {
+            log.warn("Invalid payment state: {}", payment.getStatus());
             throw new BadRequestException("Payment cannot be verified in the current state.");
         }
 
-        // 4. Build Gateway Verification Request
+        //  Build Gateway Verification Request
         GatewayPaymentVerificationRequest gatewayRequest =
                 GatewayPaymentVerificationRequest.builder()
                         .gatewayOrderId(request.getGatewayOrderId())
@@ -63,34 +70,20 @@ public class PaymentServiceImpl implements PaymentService {
                         .gatewaySignature(request.getGatewaySignature())
                         .build();
 
-        // 5. Verify Razorpay Signature
+        //  Verify Razorpay Signature
         razorpayService.verifyPayment(gatewayRequest);
-        GatewayPaymentDetailsResponse gatewayDetails = razorpayService.fetchPayment(request.getGatewayPaymentId());
+        log.info("Checkout signature verified successfully. Gateway Payment Id: {}",
+                request.getGatewayPaymentId());
+        // Complete Payment
+        PaymentEntity completedPayment =completePayment(payment, request.getGatewayPaymentId(),
+                request.getGatewaySignature());
 
-        // 6. Update Payment
-        OffsetDateTime now = OffsetDateTime.now();
-
-        payment.setGatewayPaymentId(request.getGatewayPaymentId());
-        payment.setGatewaySignature(request.getGatewaySignature());
-        payment.setStatus(PaymentStatus.SUCCESS);
-        payment.setPaidAt(now);
-        payment.setPaymentMethod(gatewayDetails.getPaymentMethod());
-        payment.setGatewayStatus(gatewayDetails.getGatewayStatus());
-        payment.setGatewayResponse(gatewayDetails.getGatewayResponse());
-
-        // 7. Update Payment Intent
-        PaymentIntentEntity paymentIntent = payment.getPaymentIntent();
-        paymentIntent.setStatus(PaymentIntentStatus.COMPLETED);
-
-        // 8. Record Payment Event
-        paymentEventService.recordPaymentSuccess(payment);
-
-        // 9. Build Response
+        log.info("Payment verified successfully. Payment Reference: {}", payment.getPaymentReference());
         return VerifyPaymentResponse.builder()
-                .paymentReference(payment.getPaymentReference())
-                .paymentIntentReference(paymentIntent.getPaymentIntentReference())
-                .gatewayPaymentId(payment.getGatewayPaymentId())
-                .status(payment.getStatus())
+                .paymentReference(completedPayment.getPaymentReference())
+                .paymentIntentReference(completedPayment.getPaymentIntent().getPaymentIntentReference())
+                .gatewayPaymentId(completedPayment.getGatewayPaymentId())
+                .status(completedPayment.getStatus())
                 .message("Payment verified successfully.")
                 .build();
     }
@@ -112,4 +105,80 @@ public class PaymentServiceImpl implements PaymentService {
         payment.setStatus(PaymentStatus.CREATED);
         return paymentRepository.save(payment);
     }
+
+    @Override
+    @Transactional
+    public PaymentEntity  completePayment(PaymentEntity payment, String gatewayPaymentId, String gatewaySignature) {
+        log.info(  "Completing payment. Payment Reference: {}, Gateway Order Id: {}",
+                payment.getPaymentReference(), payment.getGatewayOrderId());
+        // Fetch latest payment details from Razorpay
+        GatewayPaymentDetailsResponse  gatewayDetails =razorpayService.fetchPayment(gatewayPaymentId);
+        OffsetDateTime now=OffsetDateTime.now();
+        //Update Payment
+        payment.setGatewayPaymentId(gatewayPaymentId);
+        payment.setGatewaySignature(gatewaySignature);
+        payment.setGatewayStatus(gatewayDetails.getGatewayStatus());
+        payment.setGatewayResponse(gatewayDetails.getGatewayResponse());
+        payment.setPaymentMethod(gatewayDetails.getPaymentMethod());
+        payment.setStatus(PaymentStatus.SUCCESS);
+        payment.setPaidAt(now);
+
+        paymentRepository.save(payment);
+        log.info("Payment updated successfully. Payment Reference: {}",
+                payment.getPaymentReference());
+
+        // Update Payment Intent
+        PaymentIntentEntity paymentIntent = payment.getPaymentIntent();
+        paymentIntent.setStatus(PaymentIntentStatus.COMPLETED);
+        paymentIntentRepository.save(paymentIntent);
+
+        log.info("Payment Intent completed. Payment Intent Reference: {}",
+                paymentIntent.getPaymentIntentReference());
+        // Record Event
+        paymentEventService.recordPaymentSuccess(payment);
+        log.info("Payment success event recorded. Payment Reference: {}",
+                payment.getPaymentReference());
+
+        return payment;
+    }
+
+    @Override
+    public PaymentEntity failPayment(PaymentEntity payment,String gatewayPaymentId, GatewayPaymentDetailsResponse gatewayDetails) {
+        log.info("Processing failed payment. Payment Reference: {}, Gateway Order Id: {}",
+                payment.getPaymentReference(), payment.getGatewayOrderId());
+
+        // Ignore duplicate failure
+        if (payment.getStatus()==PaymentStatus.FAILED){
+            log.info("Payment already marked as FAILED. Payment Reference: {}",
+                    payment.getPaymentReference());
+            return payment;
+        }
+
+        // Never downgrade a successful payment
+        if (payment.getStatus()==PaymentStatus.SUCCESS){
+            log.warn("Ignoring payment.failed webhook for successful payment. Payment Reference: {}",
+                    payment.getPaymentReference());
+
+            return payment;
+        }
+        // Update Payment
+        payment.setGatewayPaymentId(gatewayPaymentId);
+        payment.setGatewayStatus(gatewayDetails.getGatewayStatus());
+        payment.setPaymentMethod(gatewayDetails.getPaymentMethod());
+        payment.setGatewayResponse(gatewayDetails.getGatewayResponse());
+        payment.setStatus(PaymentStatus.FAILED);
+        payment.setPaidAt(null);
+        paymentRepository.save(payment);
+        log.info("Payment marked as FAILED. Payment Reference: {}", payment.getPaymentReference());
+        // Record Event
+        paymentEventService.recordPaymentFailed(payment);
+        log.info("Payment failure event recorded. Payment Reference: {}",
+                payment.getPaymentReference());
+        return payment;
+
+    }
+
+
+
+
 }

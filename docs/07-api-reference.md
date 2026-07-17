@@ -590,6 +590,68 @@ GET /payments/{paymentReference}/events
 POST /webhooks/razorpay
 ```
 
+## Razorpay Webhook
+
+### Endpoint
+
+```
+POST /api/v1/webhooks/razorpay
+```
+
+### Description
+
+Receives webhook events from Razorpay whenever a configured payment event occurs.
+
+This endpoint is intended to be called only by Razorpay servers.
+
+---
+
+### Headers
+
+| Header | Required | Description |
+|---------|----------|-------------|
+| X-Razorpay-Signature | Yes | Used to verify webhook authenticity |
+
+---
+
+### Request Body
+
+Content-Type
+
+```
+application/json
+```
+
+Example
+
+```json
+{
+    "event":"payment.captured",
+    "payload":{...}
+}
+```
+
+---
+
+### Success Response
+
+```
+HTTP 200 OK
+```
+
+Returned after successful webhook processing.
+
+---
+
+### Error Responses
+
+| Status | Description |
+|---------|-------------|
+| 400 | Invalid webhook signature or malformed payload |
+| 500 | Internal server error |
+
+---
+
 ---
 
 ## Refund

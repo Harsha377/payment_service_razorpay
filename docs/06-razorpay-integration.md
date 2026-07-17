@@ -616,12 +616,33 @@ Verified
 - Gateway Response Storage
 
 ---
+## Webhook Integration
+
+The StreamHub Payment Service uses Razorpay Webhooks to receive asynchronous payment notifications directly from Razorpay.
+
+The webhook implementation includes:
+
+- Webhook endpoint
+- Signature verification using HMAC SHA256
+- Event routing
+- Payment lifecycle processing
+- Production-ready webhook architecture
+
+Supported Events
+
+- payment.captured
+- payment.failed
+- payment.authorized
+- order.paid
+
+For complete implementation details, refer to:
+
+**10-webhook-integration.md**
 
 # 19. Current Limitations
 
 The current implementation does not yet support
 
-- Webhooks
 - Refund APIs
 - Payout APIs
 - Subscription APIs
