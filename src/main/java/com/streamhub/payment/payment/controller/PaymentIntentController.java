@@ -1,5 +1,6 @@
 package com.streamhub.payment.payment.controller;
 
+import com.streamhub.payment.common.constants.HttpHeadersConstants;
 import com.streamhub.payment.payment.dto.request.CreatePaymentIntentRequest;
 import com.streamhub.payment.payment.dto.response.CreatePaymentIntentResponse;
 import com.streamhub.payment.payment.service.PaymentIntentService;
@@ -20,11 +21,12 @@ public class PaymentIntentController {
 
     @PostMapping
     public ResponseEntity<CreatePaymentIntentResponse> createPaymentIntent(
+            @RequestHeader(HttpHeadersConstants.IDEMPOTENCY_KEY) String idempotencyKey,
             @Valid @RequestBody CreatePaymentIntentRequest request
     ) {
 
         CreatePaymentIntentResponse response =
-                paymentIntentService.createPaymentIntent(request);
+                paymentIntentService.createPaymentIntent(idempotencyKey,request);
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(response);

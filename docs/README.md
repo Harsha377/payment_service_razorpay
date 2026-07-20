@@ -1,41 +1,78 @@
 # StreamHub Payment Service
 
-A production-oriented Payment Service responsible for managing payment intents, payment processing, payment verification, and payment event tracking using Razorpay.
+The **StreamHub Payment Service** is a production-oriented payment microservice responsible for managing the complete **Pay-In** and **Refund** lifecycle for the StreamHub platform.
 
-This service is designed with a clean layered architecture and acts as an independent payment module that can be integrated with multiple business applications.
+The service provides a centralized payment abstraction over Razorpay, handling payment initialization, payment verification, refund processing, webhook synchronization, and immutable event tracking.
+
+It follows a clean layered architecture with complete separation between business logic and gateway-specific implementation, allowing additional payment gateways to be integrated with minimal changes to the business layer.
 
 ---
 
-# Project Status
+## Project Status
 
-Current Status
+## Current Status
 
-✅ Pay-In Flow Completed
+✅ Pay-In Module Completed
+✅ Refund Module Completed
+✅ Razorpay Webhook Processing Completed
+✅ Payment Intent Idempotency
+✅ Refund Idempotency
+✅ Scheduled Idempotency Cleanup
+✅ End-to-End Manual Testing Completed
 
-Implemented Features
+
+## Implemented Features
+
+## Payment Processing
 
 - Payment Intent Creation
 - Razorpay Order Creation
-- Payment Creation
 - Payment Verification
-- Razorpay Signature Verification
-- Fetch Payment Details from Razorpay
+- Payment Query APIs
 - Payment Event Tracking
-- PostgreSQL Persistence
+- Idempotent Payment Intent Creation
+
+## Refund Processing
+
+- Full Refunds
+- Partial Refunds
+- Multiple Partial Refunds
+- Refund Query APIs
+- Refund Event Tracking
+- Idempotent Refund Creation
+
+## Razorpay Integration
+
+- Order Creation
+- Signature Verification
+- Fetch Payment Details
+- Refund Creation
+- Fetch Refund Details
+- Webhook Signature Verification
+
+## Infrastructure
+
+- PostgreSQL
+- Flyway Migrations
 - JSONB Support
-- ULID References
+- ULID Business References
+- Manual DTO Mapping
 - Global Exception Handling
 - Request Validation
+- Transaction Management
+- Idempotency Keys
+- Request Hash Validation
+- Scheduled Cleanup
 
-Upcoming Features
+### Upcoming Features
 
-- Razorpay Webhooks
-- Read APIs
-- Unit Testing
+- Automated Unit Testing
 - Integration Testing
-- Metrics & Monitoring
 - OpenAPI Documentation
+- Monitoring & Metrics
 - Production Hardening
+- Payout Module
+- Multi-Gateway Support
 
 ---
 
@@ -72,19 +109,37 @@ Payment Gateway
 The project follows a layered architecture.
 
 ```text
-Controller
-      │
-      ▼
-Service
-      │
-      ▼
-Mapper
-      │
-      ▼
-Repository
-      │
-      ▼
-Database
+Client
+
+↓
+
+Controllers
+
+↓
+
+Business Services
+
+↓
+
+Repositories
+
+↓
+
+PostgreSQL
+
+            │
+
+            ▼
+
+Gateway Layer
+
+↓
+
+Razorpay APIs
+
+↓
+
+Webhook Processing
 ```
 
 The payment gateway is isolated from the business layer through a dedicated Gateway module.
@@ -107,28 +162,13 @@ This allows future support for additional payment gateways without affecting bus
 
 ```text
 src/main/java
-│
+
 ├── common
-│
-├── config
-│
 ├── gateway
-│
-│     ├── config
-│     ├── dto
-│     ├── mapper
-│     ├── service
-│
+├── idempotency
 ├── payment
-│
-│     ├── controller
-│     ├── dto
-│     ├── entity
-│     ├── enums
-│     ├── mapper
-│     ├── repository
-│     ├── service
-│
+├── refund
+├── webhook
 └── PaymentServiceApplication
 ```
 
@@ -141,27 +181,22 @@ Core Tables
 - payment_intents
 - payments
 - payment_events
+- refunds
+- refund_events
+- idempotency_keys
 
 Relationship
 
 ```text
-Payment Intent
-
-1
-
-↓
-
-N
-
-Payments
-
-1
-
-↓
-
-N
-
-Payment Events
+PaymentIntent
+      │
+      └───────< Payment
+                     │
+                     ├──────< PaymentEvent
+                     │
+                     └──────< Refund
+                                 │
+                                 └──────< RefundEvent
 ```
 
 ---
@@ -183,22 +218,33 @@ Validate Request
 
 ↓
 
+Generate Request Hash
+
+↓
+
+Check Idempotency Key
+
+↓
+
+Existing Request?
+
+├── Yes
+│
+│   ↓
+│ Return Existing Response
+│
+└── No
+    ↓
 Create Payment Intent
-
-↓
-
+    ↓
 Create Razorpay Order
-
-↓
-
+    ↓
 Create Payment
-
-↓
-
+    ↓
 Create Payment Event
-
-↓
-
+    ↓
+Save Idempotency Record
+    ↓
 Return Response
 ```
 
@@ -206,7 +252,6 @@ Return Response
 
 ## 2. Verify Payment
 
-```text
 Frontend
 
 ↓
@@ -244,23 +289,154 @@ Create Payment Event
 ↓
 
 Return Response
-```
+
+---
+### Refund Flow
+Merchant
+
+↓
+
+Create Refund API
+
+↓
+
+Validate Request
+
+↓
+
+Generate Request Hash
+
+↓
+
+Check Idempotency Key
+
+↓
+
+Existing Request?
+
+├── Yes
+│
+│ Return Existing Response
+│
+└── No
+↓
+Validate Refund
+↓
+Create Refund
+↓
+Create Razorpay Refund
+↓
+Update Refund
+↓
+Create Refund Event
+↓
+Save Idempotency Record
+↓
+Return Response
+
+
+---
+### Webhook Flow
+
+Razorpay
+
+↓
+
+Webhook
+
+↓
+
+Verify Signature
+
+↓
+
+Process Event
+
+↓
+
+Update Database
+
+↓
+
+Record Event
+
+↓
+
+Return HTTP 200
+
+
 
 ---
 
+## idempotency flow
+Client
+
+↓
+
+POST Request
+
+↓
+
+Idempotency Key
+
+↓
+
+Already Exists?
+
+├── Yes
+│
+│ Return Stored Response
+│
+└── No
+↓
+Execute Business Logic
+↓
+Store Response
+↓
+Return Response
+
+---
+
+## Architecture Flow
+
+                    Client
+                       │
+                       ▼
+                 REST Controllers
+                       │
+                       ▼
+               Business Services
+               ┌────────┴─────────┐
+               ▼                  ▼
+        Repositories        Gateway Layer
+               │                  │
+               ▼                  ▼
+          PostgreSQL         Razorpay APIs
+
+---
 # Current APIs
 
 Payment Intent
 
-```
 POST /api/v1/payment-intents
-```
 
-Payment Verification
+Payments
 
-```
 POST /api/v1/payments/verify
-```
+
+GET /api/v1/payments/{paymentReference}
+
+Refunds
+
+POST /api/v1/refunds
+
+GET /api/v1/refunds/{refundReference}
+
+GET /api/v1/refunds/payment/{paymentReference}
+
+Webhooks
+
+POST /api/v1/webhooks/razorpay
 
 ---
 
@@ -271,6 +447,9 @@ The following entities are fully implemented.
 - PaymentIntentEntity
 - PaymentEntity
 - PaymentEventEntity
+- RefundEntity
+- RefundEventEntity
+- IdempotencyKeyEntity
 
 Implemented Features
 
@@ -283,13 +462,16 @@ Implemented Features
 
 ---
 
-# Security
+## Security
 
-The Razorpay Key Secret is never exposed outside the backend.
-
-The frontend receives only the public Gateway Key required for Razorpay Checkout.
-
-Payment verification is performed using Razorpay Signature Verification.
+- Razorpay Secret Key is never exposed outside the backend.
+- Only the Razorpay Public Key (Key ID) is returned to the frontend.
+- All payment signatures are verified before updating business records.
+- All webhook requests are authenticated using Razorpay webhook signature verification.
+- Payment Intent creation is idempotent.
+  Refund creation is idempotent.
+  Duplicate requests safely return the previously stored response.
+  Request hash validation prevents reuse of an idempotency key with a different payload.
 
 ---
 
@@ -306,6 +488,9 @@ This project follows the following design principles.
 - ULID Based Business References
 - Strong Validation
 - Global Exception Handling
+- Gateway Abstraction
+- Idempotent Processing
+- Immutable Event Audit Trail
 
 ---
 
@@ -315,38 +500,86 @@ Additional documentation is available inside the `docs/` directory.
 
 Planned documents include:
 
-- Project Overview
-- Architecture
-- Database Design
-- Payment Intent Flow
-- Payment Verification Flow
-- Razorpay Integration
-- API Reference
-- Design Decisions
-- Roadmap
+* README
+* 
+* Project Overview
+* 
+* Architecture
+* 
+* Database Design
+* 
+* Payment Intent Flow
+* 
+* Payment Verification Flow
+* 
+* Webhook Flow
+* 
+* Refund Flow
+* 
+* Razorpay Integration
+* 
+* API Reference
+* 
+* Business Rules
+* 
+* Testing Guide
+* 
+* Roadmap
 
 ---
 
-# Roadmap
+## Roadmap
 
-Completed
+### Completed
 
 - Project Setup
 - Database Design
 - Razorpay Integration
-- Payment Intent Creation
-- Payment Verification
+- Payment Module
+- Payment Webhook Processing
+- Refund Module
+- Idempotency
+- Refund Webhook Processing
+- End-to-End Manual Testing
+- Technical Documentation
 
-In Progress
+### In Progress
 
-- Documentation
+- Automated Testing
 
-Upcoming
+### Planned
 
-- Razorpay Webhooks
-- Read APIs
-- Testing
 - Production Hardening
+- Payout Module
+- Settlement & Reconciliation
+- Multi-Gateway Support
+
+---
+
+## Key Features
+
+- Production-oriented layered architecture
+- Razorpay Pay-In integration
+- Full and partial refund support
+- Payment and refund webhook processing
+- Manual DTO mapping
+- PostgreSQL JSONB support
+- ULID-based business references
+- Immutable event tracking
+- Transaction management
+- Flyway database migrations
+- Gateway abstraction for future payment providers
+
+---
+## Project Modules
+
+| Module | Responsibility |
+|---------|----------------|
+| common | Shared infrastructure, exceptions, utilities, configuration |
+| gateway | Razorpay integration and gateway abstraction |
+| payment | Payment Intent and payment lifecycle |
+| refund | Refund lifecycle |
+| webhook | Razorpay webhook processing |
 
 ---
 

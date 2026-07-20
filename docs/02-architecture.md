@@ -6,27 +6,32 @@ The **StreamHub Payment Service** follows a layered architecture that separates 
 
 The primary objective of this architecture is to keep the business domain independent of the payment gateway implementation while maintaining high maintainability, extensibility, and testability.
 
-The service currently supports Razorpay for Pay-In operations but is designed so that additional payment gateways can be integrated in the future without changing the core business logic.
+The service currently integrates with Razorpay and supports both **Pay-In** and **Refund** operations, including synchronous APIs and asynchronous webhook processing.
+
+The architecture has been designed so that additional payment gateways can be integrated in the future without changing the core business logic.
 
 ---
 
 # 2. High-Level Architecture
 
 ```text
-                        Client Application
-                               │
-                               ▼
-                      REST Controllers
-                               │
-                               ▼
-                      Business Services
-                               │
-             ┌─────────────────┴─────────────────┐
-             ▼                                   ▼
-      Repository Layer                   Gateway Layer
-             │                                   │
-             ▼                                   ▼
-        PostgreSQL                        Razorpay APIs
+                    Client Application
+                           │
+                           ▼
+                    REST Controllers
+                           │
+                           ▼
+                    Business Services
+                           │
+          ┌────────────────┴────────────────┐
+          ▼                                 ▼
+   Repository Layer                 Gateway Layer
+          │                                 │
+          ▼                                 ▼
+     PostgreSQL                      Razorpay APIs
+          ▲                                 │
+          │                                 ▼
+      Webhook Service ◄──────── Razorpay Webhooks
 ```
 
 ---
@@ -58,6 +63,20 @@ Each layer has a single responsibility.
 # 4. Package Structure
 
 ```text
+src/main/java
+│
+├── common
+│
+├── gateway
+│
+├── payment
+│
+├── refund
+│
+├── webhook
+│
+└── PaymentServiceApplication
+
 src/main/java
 │
 ├── common
@@ -113,6 +132,9 @@ Current Controllers
 
 - PaymentIntentController
 - PaymentController
+- RefundController
+- WebhookController
+
 
 ---
 
@@ -120,15 +142,17 @@ Current Controllers
 
 The service layer contains all business logic.
 
-Responsibilities include:
+Responsibilities should now include:
 
-- Payment validation.
-- Payment creation.
-- Payment verification.
-- State transitions.
-- Transaction management.
-- Event creation.
-- Gateway orchestration.
+* Payment validation
+* Payment verification
+* Payment intent management
+* Refund validation
+* Refund processing
+* Webhook processing
+* Event recording
+* Gateway orchestration
+* Transaction management
 
 The service layer coordinates all other layers.
 
@@ -169,6 +193,8 @@ Current Repositories
 - PaymentIntentRepository
 - PaymentRepository
 - PaymentEventRepository
+- RefundRepository
+- RefundEventRepository
 
 ---
 
@@ -227,8 +253,11 @@ Razorpay
 Responsibilities
 
 - Create Order
-- Verify Signature
-- Fetch Payment Details
+- Verify Payment Signature 
+- Fetch Payment Details 
+- Create Refund 
+- Fetch Refund Details 
+- Verify Webhook Signature
 
 The business layer never communicates directly with Razorpay.
 
@@ -274,9 +303,11 @@ The database layer stores all payment-related information.
 
 Current Tables
 
-- payment_intents
-- payments
-- payment_events
+- payment_intent
+- payments 
+- payment_events 
+- refunds 
+- refund_events
 
 Relationships
 
@@ -298,6 +329,26 @@ Payments
 N
 
 Payment Events
+
+↓
+
+1
+
+↓
+
+N
+
+Refunds
+
+↓
+
+1
+
+↓
+
+N
+
+Refund Events
 ```
 
 ---
@@ -341,6 +392,69 @@ PaymentEventRepository
 
 Response
 ```
+### Refund Flow
+Merchant
+
+↓
+
+RefundController
+
+↓
+
+RefundService
+
+↓
+
+Validate Refund
+
+↓
+
+Gateway Service
+
+↓
+
+Razorpay Refund API
+
+↓
+
+RefundRepository
+
+↓
+
+RefundEventRepository
+
+↓
+
+Response
+
+
+### Webhook Flow
+
+Razorpay
+
+↓
+
+WebhookController
+
+↓
+
+WebhookService
+
+↓
+
+Payment / Refund Service
+
+↓
+
+Repositories
+
+↓
+
+Events
+
+↓
+
+Response
 
 ---
 
@@ -440,6 +554,26 @@ PaymentEntity
 N
 
 PaymentEventEntity
+
+↓
+
+1
+
+↓
+
+N
+
+RefundEntity
+
+↓
+
+1
+
+↓
+
+N
+
+RefundEventEntity
 ```
 
 Each entity has a specific responsibility.
@@ -543,9 +677,13 @@ Several gateway-related fields are stored using PostgreSQL JSONB.
 
 Current JSONB fields
 
-- metadata
-- gatewayResponse
-- eventData
+* PaymentIntent.metadata
+* Payment.gatewayResponse
+* PaymentEvent.eventData
+* Refund.metadata
+* Refund.gatewayResponse
+* Refund.gatewayNotes
+* RefundEvent.eventData
 
 Advantages
 
@@ -562,9 +700,15 @@ The project uses ULIDs instead of database IDs for external references.
 
 Current references
 
-- Payment Intent Reference
-- Payment Reference
-- Payment Event Reference
+* Payment Intent Reference
+* 
+* Payment Reference
+* 
+* Payment Event Reference
+* 
+* Refund Reference
+* 
+* Refund Event Reference
 
 Advantages
 
@@ -625,25 +769,59 @@ Gateway-specific code never leaks into business logic.
 
 The architecture prioritizes maintainability, scalability, and future extensibility over quick implementation.
 
+### Idempotency
+
+Payment verification and webhook processing are idempotent to safely handle retries.
+
+---
+
+### Immutable Audit Trail
+
+Payment and refund events are append-only records used for auditing.
+
+---
+
+### Gateway Abstraction
+
+External gateway logic is isolated behind interfaces, allowing additional providers to be added with minimal business-layer changes.
+
 ---
 
 # 20. Current Architecture Status
 
 ## Completed
 
-- Layered Architecture
-- Gateway Abstraction
-- Repository Pattern
-- Manual Mapping
-- Transaction Management
-- Payment Intent Flow
-- Payment Verification Flow
-- Razorpay Integration
-- JSONB Support
-- ULID References
-- Global Exception Handling
-- Validation
-- Auditing
+Completed
+
+✓ Layered Architecture
+
+✓ Gateway Abstraction
+
+✓ Repository Pattern
+
+✓ Manual Mapping
+
+✓ Transaction Management
+
+✓ Payment Module
+
+✓ Payment Webhooks
+
+✓ Refund Module
+
+✓ Refund Webhooks
+
+✓ JSONB Support
+
+✓ ULID References
+
+✓ Validation
+
+✓ Global Exception Handling
+
+✓ Production Logging
+
+✓ Idempotent Processing
 
 ---
 
@@ -651,22 +829,44 @@ The architecture prioritizes maintainability, scalability, and future extensibil
 
 The following architectural components will be added in future phases.
 
-- Razorpay Webhook Processing
-- Read APIs
-- Refund Module
-- Payout Module
-- Multiple Gateway Support
-- Monitoring
-- Metrics
-- OpenAPI Documentation
-- Integration Testing
-- Unit Testing
-- Production Hardening
+* Payout Module
+* 
+* Settlement Management
+* 
+* Financial Reconciliation
+* 
+* Multiple Gateway Support
+* 
+* Monitoring
+* 
+* Metrics
+* 
+* Distributed Tracing
+* 
+* OpenAPI Documentation
+* 
+* Integration Testing
+* 
+* Unit Testing
+* 
+* Performance Testing
+* 
+* Security Hardening
+* 
+* Production Dashboard
 
 ---
 
-# Architecture Summary
+# Architecture Decisions
 
-The current architecture provides a clean separation between business logic, persistence, and payment gateway integration. Business services remain independent of Razorpay-specific implementation, ensuring that future enhancements—such as additional payment gateways, refunds, payouts, or asynchronous webhook processing—can be introduced with minimal impact on the existing codebase.
+The following decisions guide the implementation of the payment service:
 
-This architecture establishes a scalable and production-oriented foundation for the StreamHub Payment Service.
+- Business references use ULIDs instead of database IDs.
+- Monetary amounts are stored in the smallest currency unit (paise).
+- Manual DTO mapping is used instead of MapStruct.
+- Gateway integrations are isolated behind service interfaces.
+- Payment and refund events are immutable audit records.
+- PostgreSQL JSONB is used to preserve complete gateway payloads.
+- Webhook processing is idempotent to safely handle retries.
+- Flyway is used for version-controlled database schema management.
+- Business entities use transactional consistency for state transitions.

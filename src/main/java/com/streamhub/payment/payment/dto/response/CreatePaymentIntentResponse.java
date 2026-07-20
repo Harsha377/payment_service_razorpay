@@ -1,5 +1,6 @@
 package com.streamhub.payment.payment.dto.response;
 
+import com.streamhub.payment.payment.enums.PaymentGateway;
 import com.streamhub.payment.payment.enums.PaymentStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -22,6 +23,6 @@ public class CreatePaymentIntentResponse {
 
     private PaymentStatus status;
     private String gatewayKey;
-    private String gatewayName;
+    private PaymentGateway gatewayName;
 
 }

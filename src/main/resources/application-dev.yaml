@@ -29,3 +29,8 @@ razorpay:
   key-id: rzp_test_TEC6XXJApBmGyT
   key-secret: ZwnNjQM5S3xNl32Xbj5Rpav9
   webhook-secret: qspQ_HW4hxV9BSt
+
+
+idempotency:
+  cleanup:
+    cron: "0 0 2 * * ?"

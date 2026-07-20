@@ -2,9 +2,11 @@
 
 ## 1. Overview
 
-The **Payment Intent Flow** is the first stage of the payment lifecycle.
+The **Payment Intent Flow** is the first stage of the synchronous Pay-In lifecycle.
 
-Its primary responsibility is to initialize a payment before the customer enters the payment gateway.
+Its responsibility is to initialize a payment by creating the required business and gateway resources before the customer interacts with the payment gateway.
+
+This flow prepares the payment for checkout but **does not collect money**. Payment collection and confirmation occur during the Payment Verification and Webhook flows.
 
 During this phase, the Payment Service:
 
@@ -30,89 +32,48 @@ The Payment Intent Flow is responsible for:
 - Persisting payment information.
 - Recording the first payment event.
 - Returning gateway information required for Checkout.
+- Maintain transactional consistency.
+- Support future payment retries.
 
 ---
 
 # 3. High-Level Flow
 
 ```text
-                   Client
-
-                     │
-
-                     ▼
-
-      POST /payment-intents
-
-                     │
-
-                     ▼
-
-        PaymentIntentController
-
-                     │
-
-                     ▼
-
-       PaymentIntentService
-
-                     │
-
-          Validate Request
-
-                     │
-
-                     ▼
-
-     Create PaymentIntentEntity
-
-                     │
-
-                     ▼
-
- Save payment_intents (CREATED)
-
-                     │
-
-                     ▼
-
-     RazorpayService.createOrder()
-
-                     │
-
-                     ▼
-
-      Razorpay Order Created
-
-                     │
-
-                     ▼
-
-      Create PaymentEntity
-
-                     │
-
-                     ▼
-
-       Save payments
-
-                     │
-
-                     ▼
-
- Create PAYMENT_CREATED Event
-
-                     │
-
-                     ▼
-
-     Save payment_events
-
-                     │
-
-                     ▼
-
- Return CreatePaymentIntentResponse
+                 Client
+      │
+      ▼
+POST /payment-intents
+      │
+      ▼
+Begin Transaction
+      │
+      ▼
+Validate Request
+      │
+      ▼
+Create Payment Intent
+      │
+      ▼
+Save Payment Intent
+      │
+      ▼
+Create Razorpay Order
+      │
+      ▼
+Create Payment
+      │
+      ▼
+Save Payment
+      │
+      ▼
+Record PAYMENT_CREATED Event
+      │
+      ▼
+Commit Transaction
+      │
+      ▼
+Return Response
 ```
 
 ---
@@ -129,11 +90,15 @@ Example Request
 
 ```json
 {
-    "orderReference": "01K0ORDER00000000000000001",
-    "customerReference": "01K0CUSTOMER000000000001",
-    "amount": 10000,
-    "currency": "INR",
-    "description": "Premium Subscription"
+  "orderReference": "01K0ORDER00000000000000001",
+  "customerReference": "01K0CUSTOMER000000000001",
+  "amount": 10000,
+  "currency": "INR",
+  "description": "Premium Subscription",
+  "metadata": {
+    "plan": "PREMIUM",
+    "coupon": "WELCOME10"
+  }
 }
 ```
 
@@ -154,12 +119,14 @@ Validation Rules
 | description | Optional |
 
 If validation fails, the request is rejected before any database operation occurs.
+Metadata → Optional JSON object
 
 ---
 
 # 6. Step 1 – Create Payment Intent
 
 A new Payment Intent is created.
+Amount is stored in the smallest currency unit (paise).
 
 Business Reference
 
@@ -193,6 +160,7 @@ The Payment Intent represents the business request.
 
 # 7. Step 2 – Persist Payment Intent
 
+created_at and updated_at are automatically populated using Spring Data JPA Auditing.
 The Payment Intent is stored in
 
 ```text
@@ -231,9 +199,9 @@ Razorpay API
 
 The service sends
 
-- Amount
+- Amount (Paise)
 - Currency
-- Receipt
+- Receipt (Payment Reference)
 
 Razorpay returns
 
@@ -251,6 +219,7 @@ Only an Order has been created.
 # 9. Step 4 – Create Payment Record
 
 A Payment entity is created.
+payment_intent_id establishes the relationship with the business request.
 
 Initial values
 
@@ -316,6 +285,8 @@ This establishes the link between the business request and the gateway transacti
 
 # 11. Step 6 – Record Payment Event
 
+Payment events are append-only records and are never updated. 
+Every state transition creates a new event, providing a complete audit trail.
 The first payment event is created.
 
 Event
@@ -343,6 +314,9 @@ Maintain a complete audit trail of payment lifecycle events.
 ---
 
 # 12. Step 7 – Build Response
+
+The gatewayKey returned is Razorpay's public Key ID.
+The secret key is never exposed outside the backend.
 
 The backend constructs a response for the frontend.
 
@@ -372,7 +346,9 @@ to launch Razorpay Checkout.
 
 # 13. Transaction Flow
 
-The Payment Intent Flow executes inside a database transaction.
+Database operations execute within a single transaction.
+
+The call to Razorpay is an external network operation and cannot participate in the database transaction. If the gateway call succeeds but a later database operation fails, compensating actions or operational handling may be required.
 
 ```text
 Create Payment Intent
@@ -429,6 +405,12 @@ Status
 
 CREATED
 ```
+
+payment_intents.updated_at
+
+↓
+
+Automatically managed
 
 Gateway fields
 
@@ -492,6 +474,8 @@ The Payment Intent represents the business request.
 
 The Payment represents the gateway transaction.
 
+Supports asynchronous webhook processing.
+
 Example
 
 ```text
@@ -527,6 +511,26 @@ without changing the business request.
 The business request should exist before contacting the payment gateway.
 
 If the gateway is temporarily unavailable, the request is still traceable.
+
+### Why store amount in paise?
+All monetary values are stored in the smallest currency unit (paise).
+
+Benefits
+
+- Prevents floating-point precision issues.
+- Matches Razorpay API requirements.
+- Simplifies financial calculations.
+- Provides consistent handling across payment and refund modules.
+
+### Why use ULIDs?
+Business references use ULIDs instead of database IDs.
+
+Benefits
+
+- Globally unique.
+- Time sortable.
+- URL safe.
+- Prevents exposing internal database identifiers.
 
 ---
 
@@ -580,7 +584,10 @@ Implemented
 - Payment Creation
 - Payment Persistence
 - Payment Event Recording
-- API Response Construction
+- API Response Construction 
+- Metadata Support 
+- Production Logging 
+- Manual End-to-End Testing
 
 Verified
 
@@ -591,7 +598,35 @@ Verified
 
 ---
 
-# 18. Next Phase
+# 18. Related Flows
+
+The Payment Intent Flow represents the initialization stage of the payment lifecycle.
+
+The complete payment lifecycle consists of:
+
+1. Payment Intent Flow
+2. Payment Verification Flow
+3. Payment Webhook Processing
+4. Refund Flow
+5. Refund Webhook Processing
+
+Together these flows provide the complete Pay-In and Refund lifecycle of the StreamHub Payment Service.
+
+### Failure Scenarios
+Document what happens when something goes wrong.
+
+Example:
+
+| Scenario                      | Result                                 |
+| ----------------------------- | -------------------------------------- |
+| Validation fails              | 400 Bad Request                        |
+| Razorpay order creation fails | Payment Intent transaction rolled back |
+| Database save fails           | Transaction rolled back                |
+| Duplicate order reference     | 409 Conflict                           |
+| Gateway unavailable           | 500 Internal Server Error              |
+
+
+# 19. Next Phase
 
 The Payment Intent Flow ends after successfully creating the Razorpay Order.
 

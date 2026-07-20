@@ -12,21 +12,24 @@ Each phase represents a functional milestone.
 
 # Project Progress
 
-| Phase | Status |
-|---------|--------|
-| Phase 1 – Project Setup | ✅ Completed |
-| Phase 2 – Database Design | ✅ Completed |
-| Phase 3 – Razorpay Integration | ✅ Completed |
-| Phase 4 – Business Layer | ✅ Completed |
-| Phase 5 – Payment Intent Flow | ✅ Completed |
-| Phase 6 – Payment Verification Flow | ✅ Completed |
-| Phase 7 – Razorpay Webhooks | ✅ Pending |
-| Phase 8 – Read APIs | ⏳ Pending |
-| Phase 9 – Testing | ⏳ Pending |
-| Phase 10 – Production Hardening | ⏳ Pending |
-| Phase 11 – Refund Module | 🔲 Planned |
-| Phase 12 – Payout Module | 🔲 Planned |
-| Phase 13 – Multi-Gateway Support | 🔲 Planned |
+| Phase                                 | Status                         |
+| ------------------------------------- | ------------------------------ |
+| Phase 1 – Project Setup               | ✅ Completed                    |
+| Phase 2 – Database Design             | ✅ Completed                    |
+| Phase 3 – Razorpay Integration        | ✅ Completed                    |
+| Phase 4 – Business Layer              | ✅ Completed                    |
+| Phase 5 – Payment Intent Flow         | ✅ Completed                    |
+| Phase 6 – Payment Verification Flow   | ✅ Completed                    |
+| Phase 7 – Razorpay Webhook Processing | ✅ Completed                    |
+| Phase 8 – Payment Query APIs          | ✅ Completed *(if implemented)* |
+| Phase 9 – Refund Module               | ✅ Completed                    |
+| Phase 10 – Refund Webhook Processing  | ✅ Completed                    |
+| Phase 11 – Manual End-to-End Testing  | ✅ Completed                    |
+| Phase 12 – Automated Testing          | ⏳ Pending                      |
+| Phase 13 – Production Hardening       | ⏳ Pending                      |
+| Phase 14 – Payout Module              | 🔲 Planned                     |
+| Phase 15 – Multi-Gateway Support      | 🔲 Planned                     |
+
 
 ---
 
@@ -85,6 +88,22 @@ Implemented
 - Event Tracking
 - JSONB Event Data
 
+### refunds
+
+- Entity
+- Repository
+- Flyway Migration
+- Constraints
+- Indexes
+- JSONB Support
+
+### refund_events
+
+- Entity
+- Repository
+- Event Tracking
+- JSONB Event Data
+
 ---
 
 ## Phase 3 – Razorpay Integration
@@ -95,14 +114,23 @@ Status
 
 Implemented
 
-- Razorpay Configuration
-- Razorpay Client
-- Gateway Layer
-- Create Order
-- Verify Signature
-- Fetch Payment Details
-- Payment Method Mapping
-- Gateway Response Storage
+* Create Order
+* 
+* Verify Signature
+* 
+* Fetch Payment Details
+* 
+* Create Refund
+* 
+* Fetch Refund Details
+* 
+* Verify Webhook Signature
+* 
+* Payment Method Mapping
+* 
+* Gateway Response Storage
+* 
+* Gateway Notes Storage
 
 ---
 
@@ -119,6 +147,9 @@ Implemented
 - PaymentEventService
 - Manual Mapping
 - Transaction Management
+- RefundService 
+- RefundEventService 
+- WebhookService
 
 ---
 
@@ -157,7 +188,7 @@ Implemented
 
 - Verify Payment API
 - Payment Lookup
-- Duplicate Verification Prevention
+- Idempotent Verification
 - Payment State Validation
 - Signature Verification
 - Fetch Payment Details
@@ -179,98 +210,145 @@ Verified
 
 ---
 
-# Current Status
+---
+### Phase 7 – Razorpay Webhook Processing
 
-The synchronous Pay-In flow is fully implemented and tested.
+Status
+
+✅ Completed
+
+Implemented
+
+Webhook Controller
+Signature Verification
+Event Routing
+payment.authorized
+payment.captured
+payment.failed
+order.paid
+Idempotent Processing
+Payment Updates
+Payment Intent Updates
+Payment Events
+
+Verified
+
+Webhook Signature Validation
+Payment Updates
+Duplicate Webhook Handling
+Event Recording
+
+---
+
+---
+### Phase 8 – Refund Module
+
+Status
+
+✅ Completed
+
+Implemented
+
+* Refund API
+* Partial Refund
+* Full Refund
+* Multiple Partial Refunds
+* Remaining Refund Validation
+* Refund Persistence
+* Refund Events
+* Refund Query APIs
+* Razorpay Refund Integration
+
+Verified
+
+* Full Refund
+* Partial Refund
+* Database Updates
+* Razorpay Refund
+* Event Recording
+---
+---
+### Phase 9 – Refund Webhook Processing
+
+Status
+
+✅ Completed
+
+Implemented
+
+* refund.processed
+* refund.failed
+* Signature Verification
+* Refund Updates
+* Refund Event Recording
+* Idempotent Processing
+
+Verified
+
+* Refund Status Updates
+* Duplicate Handling
+* Event Recording
+---
+
+---
+### Phase 10 – Manual End-to-End Testing
+
+Status
+
+✅ Completed
+
+Executed Scenarios
+
+* Payments
+* Payment Intent Creation
+* Checkout
+* Successful Payment
+* Signature Verification
+* Webhook Processing
+* Duplicate Verification
+* Refunds
+* Full Refund
+* Partial Refund
+* Multiple Partial Refunds
+* Remaining Refund Validation
+* Refund Webhooks
+
+---
+
+# Implemented Lifecycle
+
 
 Completed flow
 
 ```text
-Create Payment Intent
+Implemented Lifecycle
+
+Payment Intent
 
 ↓
 
-Create Razorpay Order
+Checkout
 
 ↓
 
-Create Payment
+Payment Verification
 
 ↓
 
-Open Checkout
+Payment Webhooks
 
 ↓
 
-Customer Pays
+Refund
 
 ↓
 
-Verify Payment
-
-↓
-
-Verify Signature
-
-↓
-
-Fetch Payment Details
-
-↓
-
-Update Database
-
-↓
-
-Record Event
+Refund Webhooks
 ```
 
 ---
 
 # Next Phase
-
-# Phase 7 – Razorpay Webhooks
-
-Priority
-
-⭐⭐⭐⭐⭐ Critical
-
-Status
-
-⏳ Pending
-
-Objective
-
-Synchronize payment status directly from Razorpay using asynchronous webhooks.
-
-Tasks
-
-- Create Webhook Controller
-- Configure Webhook Secret
-- Verify Webhook Signature
-- Parse Webhook Payload
-- Process Razorpay Events
-- Update Payment
-- Update Payment Intent
-- Record Webhook Events
-- Prevent Duplicate Webhook Processing
-- Return HTTP 200 Response
-
-Events to Support
-
-- payment.authorized
-- payment.captured
-- payment.failed
-- order.paid
-
-Deliverables
-
-- Production-ready webhook endpoint
-- Signature verification
-- Event processing
-- Audit logging
-
----
 
 # Phase 8 – Read APIs
 
@@ -310,45 +388,6 @@ Deliverables
 - Payment Details API
 - Payment Intent API
 - Payment History API
-
----
-
-# Phase 9 – Testing
-
-Priority
-
-⭐⭐⭐⭐⭐
-
-Status
-
-⏳ Pending
-
-Unit Tests
-
-- Services
-- Mappers
-- Utility Classes
-
-Integration Tests
-
-- Controllers
-- Repositories
-- Database
-- Gateway Layer
-
-End-to-End Tests
-
-- Create Payment Intent
-- Verify Payment
-- Database Validation
-
-Coverage Goal
-
-Minimum
-
-```text
-80%
-```
 
 ---
 
@@ -423,27 +462,6 @@ Planned Work
 
 ---
 
-# Phase 11 – Refund Module
-
-Priority
-
-⭐⭐⭐
-
-Status
-
-🔲 Planned
-
-Features
-
-- Refund API
-- Partial Refund
-- Full Refund
-- Refund Events
-- Refund Status
-- Refund History
-
----
-
 # Phase 12 – Payout Module
 
 Priority
@@ -495,7 +513,6 @@ Implementation
 
 The following webhook events are planned for future releases.
 
-- Refund Webhooks
 - Settlement Webhooks
 - Payout Webhooks
 - Dispute Webhooks
@@ -513,6 +530,10 @@ The following webhook events are planned for future releases.
 - Payment Mismatch Review Workflow
 - Fraud Detection
 - Payment Retry Analytics
+- Payment Links 
+- Smart Collect 
+- Route 
+- Virtual Accounts
 
 # Future Improvements
 
@@ -531,6 +552,10 @@ Potential Enhancements
 - Subscription Billing
 - Invoice Generation
 - Admin Dashboard
+- Outbox Pattern 
+- Inbox Pattern 
+- Distributed Transactions 
+- Saga Support
 
 ---
 
@@ -553,29 +578,35 @@ Potential Enhancements
 
 # Current Project Health
 
-| Area | Status |
-|------|--------|
-| Architecture | ✅ Stable |
-| Database Design | ✅ Stable |
-| Payment Intent Flow | ✅ Complete |
-| Payment Verification | ✅ Complete |
-| Razorpay Integration | ✅ Complete |
-| Documentation | ✅ Complete (Current Phase) |
-| Webhooks | ⏳ Next |
-| Testing | ⏳ Pending |
-| Production Hardening | ⏳ Pending |
+| Area                 | Status     |
+| -------------------- | ---------- |
+| Architecture         | ✅ Stable   |
+| Database Design      | ✅ Stable   |
+| Payment Module       | ✅ Complete |
+| Payment Webhooks     | ✅ Complete |
+| Refund Module        | ✅ Complete |
+| Refund Webhooks      | ✅ Complete |
+| Manual Testing       | ✅ Complete |
+| Documentation        | ✅ Complete |
+| Automated Testing    | ⏳ Pending  |
+| Production Hardening | ⏳ Pending  |
+| Payout Module        | 🔲 Planned |
+
 
 ---
 
 # Immediate Next Goal
 
-The next implementation milestone is **Phase 7 – Razorpay Webhooks**.
+The next implementation milestone is **Automated Testing**.
 
-This phase introduces asynchronous payment synchronization, ensuring that the Payment Service remains consistent with Razorpay even if the frontend never calls the payment verification API.
+Priority areas include:
 
-Once Phase 7 is completed, the service will support both:
+- Unit Testing
+- Integration Testing
+- Webhook Testing
+- Refund Testing
+- End-to-End Test Automation
 
-- **Synchronous payment confirmation** (frontend verification)
-- **Asynchronous payment confirmation** (Razorpay webhooks)
+Once automated testing is completed, the focus will shift to **Production Hardening**, including monitoring, observability, security, and performance optimization.
 
-This will significantly improve the reliability and production readiness of the StreamHub Payment Service.
+After the service is production-ready, development will continue with the **Payout Module**, extending the payment platform beyond Pay-In and Refund capabilities.

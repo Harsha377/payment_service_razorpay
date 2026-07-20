@@ -1,5 +1,6 @@
 package com.streamhub.payment.refund.controller;
 
+import com.streamhub.payment.common.constants.HttpHeadersConstants;
 import com.streamhub.payment.refund.dto.request.CreateRefundRequest;
 import com.streamhub.payment.refund.dto.response.CreateRefundResponse;
 import com.streamhub.payment.refund.dto.response.RefundResponse;
@@ -21,8 +22,10 @@ public class RefundController {
     private final RefundService refundService;
 
     @PostMapping
-    public ResponseEntity<CreateRefundResponse> createRefund(@Valid @RequestBody CreateRefundRequest request){
-        CreateRefundResponse response = refundService.createRefund(request);
+    public ResponseEntity<CreateRefundResponse> createRefund(
+            @RequestHeader(HttpHeadersConstants.IDEMPOTENCY_KEY) String idempotencyKey,
+            @Valid @RequestBody CreateRefundRequest request){
+        CreateRefundResponse response = refundService.createRefund(idempotencyKey,request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

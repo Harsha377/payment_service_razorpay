@@ -7,6 +7,10 @@ import com.streamhub.payment.gateway.dto.request.GatewayRefundRequest;
 import com.streamhub.payment.gateway.dto.response.GatewayRefundDetailsResponse;
 import com.streamhub.payment.gateway.dto.response.GatewayRefundResponse;
 import com.streamhub.payment.gateway.service.RazorpayService;
+import com.streamhub.payment.idempotency.config.HashGenerator;
+import com.streamhub.payment.idempotency.entity.IdempotencyKeyEntity;
+import com.streamhub.payment.idempotency.enums.ResourceType;
+import com.streamhub.payment.idempotency.service.IdempotencyService;
 import com.streamhub.payment.payment.entity.PaymentEntity;
 import com.streamhub.payment.payment.enums.PaymentStatus;
 import com.streamhub.payment.payment.repository.PaymentRepository;
@@ -24,11 +28,13 @@ import com.streamhub.payment.refund.service.RefundEventService;
 import com.streamhub.payment.refund.service.RefundService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -41,38 +47,82 @@ public class RefundServiceImpl implements RefundService {
     private final RazorpayService razorpayService;
     private final RefundEventService refundEventService;
     private final RefundMapper refundMapper;
+    private final HashGenerator hashGenerator;
+    private final IdempotencyService idempotencyService;
 
 
     @Override
-    public CreateRefundResponse createRefund(CreateRefundRequest request) {
-       PaymentEntity payment=findPayment(request.getPaymentReference());
-       validatePayment(payment);
-        Long remainingRefundableAmount =calculateRemainingRefundableAmount(payment);
-        validateRefundAmount(request.getAmount(),remainingRefundableAmount);
+    public CreateRefundResponse createRefund(String idempotencyKey, CreateRefundRequest request) {
+        log.info("Creating refund. Payment Reference: {}, Idempotency Key: {}",
+                request.getPaymentReference(),
+                idempotencyKey);
+
+        // Generate Request Hash
+        String requestHash = hashGenerator.generateSha256(request);
+        Optional<IdempotencyKeyEntity> existingIdempotency =
+                idempotencyService.findByIdempotencyKey(idempotencyKey);
+        if (existingIdempotency.isPresent()) {
+
+            if (!idempotencyService.isExpired(existingIdempotency.get())) {
+
+                idempotencyService.validateRequest(existingIdempotency.get(), requestHash);
+                return getExistingRefundResponse(existingIdempotency.get());
+            }
+
+            log.info("Expired idempotency key found. Removing expired record. Idempotency Key: {}",
+                    idempotencyKey);
+
+            idempotencyService.delete(existingIdempotency.get());
+        }
+        PaymentEntity payment = findPayment(request.getPaymentReference());
+        validatePayment(payment);
+        Long remainingRefundableAmount = calculateRemainingRefundableAmount(payment);
+        validateRefundAmount(request.getAmount(), remainingRefundableAmount);
         RefundEntity refund = buildRefund(payment, request);
-        refund=refundRepository.save(refund);
+        refund = refundRepository.save(refund);
         GatewayRefundResponse gatewayRefund = razorpayService.createRefund(
                 GatewayRefundRequest.builder()
-                .gatewayPaymentId(payment.getGatewayPaymentId())
-                .amount(refund.getAmount())
-                .speed(refund.getSpeed())
-                .notes(null)
-                .build() );
+                        .gatewayPaymentId(payment.getGatewayPaymentId())
+                        .amount(refund.getAmount())
+                        .speed(refund.getSpeed())
+                        .notes(null)
+                        .build());
         refund.setGatewayRefundId(gatewayRefund.getGatewayRefundId());
         refund.setGatewayStatus(gatewayRefund.getGatewayStatus());
         refund.setStatus(RefundStatus.PROCESSING);
-        refund=refundRepository.save(refund);
+        refund = refundRepository.save(refund);
         refundEventService.recordEvent(refund,
                 RefundEventType.REFUND_REQUESTED,
-                RefundEventSource.API,null);
+                RefundEventSource.API, null);
+        idempotencyService.save(
+                idempotencyKey,
+                requestHash,
+                ResourceType.REFUND,
+                refund.getRefundReference(),
+                HttpStatus.CREATED.value());
+
+        log.info("Idempotency key saved. Refund Reference: {}", refund.getRefundReference());
+        return refundMapper.toCreateRefundResponse(refund);
+    }
+
+    private CreateRefundResponse getExistingRefundResponse(IdempotencyKeyEntity idempotencyKey){
+        if (idempotencyKey.getResourceType()!= ResourceType.REFUND){
+            throw new BadRequestException(
+                    "Invalid resource type for idempotent refund request.");
+        }
+        RefundEntity refund =refundRepository.findByRefundReference(idempotencyKey.getResourceReference())
+                .orElseThrow(()->new ResourceNotFoundException("Refund not found."));
+        log.info("Returning existing refund. Refund Reference: {}",
+                refund.getRefundReference());
+
         return refundMapper.toCreateRefundResponse(refund);
     }
 
     @Override
     @Transactional(readOnly = true)
     public RefundResponse getRefund(String refundReference) {
-        RefundEntity refund =  refundRepository.findByRefundReference(refundReference)
-                .orElseThrow(()-> new ResourceNotFoundException("Refund not found"));
+        RefundEntity refund = refundRepository.findByRefundReference(refundReference)
+                .orElseThrow(() -> new ResourceNotFoundException("Refund not found"));
         return refundMapper.toRefundResponse(refund);
     }
 
@@ -84,36 +134,36 @@ public class RefundServiceImpl implements RefundService {
         return refunds.stream().map(refundMapper::toRefundSummaryResponse).toList();
     }
 
-    private PaymentEntity findPayment(String paymentReference){
+    private PaymentEntity findPayment(String paymentReference) {
         return paymentRepository.findByPaymentReference(paymentReference)
-                .orElseThrow(()->
+                .orElseThrow(() ->
                         new ResourceNotFoundException("Payment not found."));
     }
 
-    private void validatePayment(PaymentEntity payment){
-        if (payment.getStatus() != PaymentStatus.SUCCESS){
+    private void validatePayment(PaymentEntity payment) {
+        if (payment.getStatus() != PaymentStatus.SUCCESS) {
             throw new BadRequestException("Only successful payments can be refunded.");
         }
     }
 
-    private Long calculateRemainingRefundableAmount(PaymentEntity payment){
-        Long refundedAmount=refundRepository.sumSuccessfulRefundAmountByPayment(payment);
-        return payment.getAmount()-refundedAmount;
+    private Long calculateRemainingRefundableAmount(PaymentEntity payment) {
+        Long refundedAmount = refundRepository.sumSuccessfulRefundAmountByPayment(payment);
+        return payment.getAmount() - refundedAmount;
     }
 
-    private void validateRefundAmount(Long requestedAmount,Long remainingRefundableAmount){
-        if (requestedAmount<=0){
+    private void validateRefundAmount(Long requestedAmount, Long remainingRefundableAmount) {
+        if (requestedAmount <= 0) {
             throw new BadRequestException("Refund amount must be greater than zero.");
         }
 
-        if (requestedAmount>remainingRefundableAmount){
+        if (requestedAmount > remainingRefundableAmount) {
             throw new BadRequestException("Refund amount exceeds the remaining refundable amount.");
         }
 
     }
 
-    private RefundEntity buildRefund(PaymentEntity payment,CreateRefundRequest request){
-        RefundEntity refund=new RefundEntity();
+    private RefundEntity buildRefund(PaymentEntity payment, CreateRefundRequest request) {
+        RefundEntity refund = new RefundEntity();
         refund.setRefundReference(UlidGenerator.generate());
         refund.setPayment(payment);
         refund.setAmount(request.getAmount());
@@ -139,7 +189,7 @@ public class RefundServiceImpl implements RefundService {
         refundEventService.recordEvent(completedRefund,
                 RefundEventType.REFUND_SUCCESS,
                 RefundEventSource.WEBHOOK,
-                gatewayDetails.getGatewayResponse() );
+                gatewayDetails.getGatewayResponse());
 
         log.info("Refund completed successfully. Refund Reference: {}",
                 completedRefund.getRefundReference());

@@ -11,6 +11,7 @@ import com.streamhub.payment.payment.entity.PaymentIntentEntity;
 public interface PaymentService {
     VerifyPaymentResponse verifyPayment(VerifyPaymentRequest request);
 
+    PaymentEntity findPaymentByPaymentIntent(PaymentIntentEntity paymentIntent);
     PaymentResponse getPayment(String paymentReference);
     PaymentEntity createPayment(
             PaymentIntentEntity paymentIntent,
@@ -26,4 +27,5 @@ public interface PaymentService {
             String gatewayPaymentId,
             GatewayPaymentDetailsResponse gatewayDetails
     );
+    PaymentEntity findByPaymentReference(String paymentReference);
 }

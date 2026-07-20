@@ -18,7 +18,9 @@ During this phase, the Payment Service:
 - Records the payment event.
 - Returns the verification result.
 
-At the end of this flow, the payment is considered **successfully completed**.
+At the end of this flow, the payment is considered successfully verified by the backend.
+
+In production, payment completion may occur either through this synchronous verification flow or through asynchronous webhook processing. Both mechanisms are designed to be idempotent and eventually lead to the same business state.
 
 ---
 
@@ -33,101 +35,63 @@ The Payment Verification Flow is responsible for:
 - Updating payment intent status.
 - Recording payment events.
 - Returning payment verification status.
+- Support idempotent verification.
+- Synchronize payment state with the webhook flow.
 
 ---
 
 # 3. High-Level Flow
 
 ```text
-                    Customer
+                  Customer
 
-                        │
+↓
 
-                        ▼
+Razorpay Checkout
 
-             Razorpay Checkout
+↓
 
-                        │
+POST /payments/verify
 
-                        ▼
+↓
 
-             Payment Successful
+Find Payment
 
-                        │
+↓
 
-                        ▼
+Already SUCCESS?
 
-           Razorpay Returns
+↓
 
-        gatewayOrderId
-        gatewayPaymentId
-        gatewaySignature
+Yes ─────────► Return Success (Idempotent)
 
-                        │
+↓
 
-                        ▼
+No
 
-          POST /payments/verify
+↓
 
-                        │
+Verify Signature
 
-                        ▼
+↓
 
-             PaymentController
+Fetch Payment Details
 
-                        │
+↓
 
-                        ▼
+Update Payment
 
-              PaymentService
+↓
 
-                        │
+Update Payment Intent
 
-                        ▼
+↓
 
-        Find Payment by Order ID
+Record PAYMENT_SUCCESS Event
 
-                        │
+↓
 
-                        ▼
-
-      Validate Current Status
-
-                        │
-
-                        ▼
-
-      Verify Razorpay Signature
-
-                        │
-
-                        ▼
-
-    Fetch Payment From Razorpay
-
-                        │
-
-                        ▼
-
-        Update Payment Record
-
-                        │
-
-                        ▼
-
-     Update Payment Intent
-
-                        │
-
-                        ▼
-
- Create PAYMENT_SUCCESS Event
-
-                        │
-
-                        ▼
-
-        Return Verification Response
+Return Success
 ```
 
 ---
@@ -155,6 +119,8 @@ Example Request
 
 # 5. Request Validation
 
+gatewayOrderId must correspond to an existing payment.
+
 Before verification begins, the request is validated.
 
 Validation Rules
@@ -173,6 +139,7 @@ If validation fails, the verification process stops immediately.
 # 6. Step 1 – Find Payment
 
 The service loads the payment using the Gateway Order ID.
+The payment is retrieved using the Razorpay Order ID because it uniquely identifies the checkout session created during the Payment Intent Flow.
 
 ```text
 gatewayOrderId
@@ -200,16 +167,19 @@ is returned.
 
 Before verifying the signature, the current payment state is validated.
 
-Allowed state
-
 ```text
-CREATED
+Already Processed
+
+SUCCESS
+
+If the payment has already been verified (either by this API or by webhook processing), the operation is treated as idempotent.
+
+The service returns a successful response without performing the verification again.
 ```
 
 Rejected states
 
 ```text
-SUCCESS
 
 FAILED
 
@@ -223,6 +193,12 @@ This prevents duplicate or invalid verification requests.
 # 8. Step 3 – Verify Razorpay Signature
 
 The service delegates verification to the Gateway Layer.
+
+```text
+Verification uses the Razorpay Secret Key configured in the backend.
+
+The secret key is never exposed outside the payment service.
+```
 
 ```text
 Payment Service
@@ -263,7 +239,8 @@ is returned.
 
 # 9. Step 4 – Fetch Payment Details
 
-After successful signature verification, the backend fetches the payment directly from Razorpay.
+The backend intentionally ignores client-supplied payment metadata and always trusts Razorpay as the source of truth.
+
 
 ```text
 Razorpay
@@ -295,7 +272,7 @@ This ensures the backend trusts Razorpay rather than the frontend.
 
 # 10. Step 5 – Update Payment
 
-The Payment record is updated.
+updated_at is automatically updated through JPA Auditing.
 
 Updated Fields
 
@@ -343,6 +320,10 @@ The Payment Intent now represents a successfully completed business payment.
 
 A new Payment Event is created.
 
+Payment events are immutable and append-only.
+
+Existing events are never modified.
+
 Event
 
 ```text
@@ -388,7 +369,15 @@ Example Response
 The verification process executes inside a database transaction.
 
 ```text
+Begin Transaction
+
+↓
+
 Find Payment
+
+↓
+
+Validate State
 
 ↓
 
@@ -464,8 +453,13 @@ Status
 
 SUCCESS
 ```
+```text
+updated_at
 
-Updated Fields
+↓
+
+Automatically updated
+```
 
 ```text
 gatewayPaymentId
@@ -587,6 +581,23 @@ Every important payment lifecycle event is recorded.
 
 This creates an immutable audit history that supports debugging, reporting, and future event-driven integrations.
 
+### Why Make Verification Idempotent?
+Payment verification may occur from multiple sources.
+
+Examples
+
+- Frontend verification API
+- Razorpay webhook
+
+Both should safely produce the same final business state.
+
+Idempotent verification prevents duplicate processing and improves resilience against retries and race conditions.
+
+## Why Keep Webhooks?
+The frontend cannot always be relied upon to notify the backend after checkout.
+
+Webhook processing guarantees eventual synchronization with Razorpay, even if the client disconnects or the verification request is never received.
+
 ---
 
 # 19. Current Flow Status
@@ -606,6 +617,9 @@ Implemented
 - Payment Intent Update
 - Payment Event Recording
 - Transaction Management
+- Idempotent Verification 
+- Production Logging 
+- Manual End-to-End Testing
 
 Verified
 

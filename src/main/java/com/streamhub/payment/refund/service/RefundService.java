@@ -10,7 +10,7 @@ import com.streamhub.payment.refund.entity.RefundEntity;
 import java.util.List;
 
 public interface RefundService {
-    CreateRefundResponse createRefund(CreateRefundRequest request);
+    CreateRefundResponse createRefund(String idempotencyKey,CreateRefundRequest request);
     RefundResponse getRefund(String refundReference);
     List<RefundSummaryResponse> getRefundsByPayment(String paymentReference);
     RefundEntity completeRefund(RefundEntity refund, GatewayRefundDetailsResponse gatewayDetails);

@@ -6,17 +6,32 @@ This document describes the REST APIs currently implemented by the StreamHub Pay
 
 Current APIs
 
+### Payment Intent
+
 - Create Payment Intent
+
+### Payments
+
 - Verify Payment
+- Get Payment
+- Get Payment Events
+
+### Refunds
+
+- Create Refund
+- Get Refund
+- Get Refunds by Payment
+
+### Webhooks
+
+- Razorpay Webhook Endpoint
+
 
 Future APIs
 
-- Get Payment
-- Get Payment Intent
-- Get Payment Events
-- Razorpay Webhooks
-- Refund APIs
 - Payout APIs
+- Settlement APIs
+- Reporting APIs
 
 ---
 
@@ -41,6 +56,11 @@ http://localhost:8083/api/v1/payment-intents
 Current Version
 
 Authentication is **not implemented**.
+
+Webhook Endpoint
+
+The Razorpay webhook endpoint does not require application authentication.
+Instead, requests are authenticated using the `X-Razorpay-Signature` header and the configured webhook secret.
 
 Future versions will support
 
@@ -87,11 +107,14 @@ Creates a Payment Intent, creates a Razorpay Order, creates a Payment record, re
 
 ```json
 {
-    "orderReference": "01K0ORDER00000000000000001",
-    "customerReference": "01K0CUSTOMER000000000001",
-    "amount": 10000,
-    "currency": "INR",
-    "description": "Premium Subscription"
+  "orderReference":"01K...",
+  "customerReference":"01K...",
+  "amount":10000,
+  "currency":"INR",
+  "description":"Premium Subscription",
+  "metadata":{
+    "plan":"PREMIUM"
+  }
 }
 ```
 
@@ -106,6 +129,7 @@ Creates a Payment Intent, creates a Razorpay Order, creates a Payment record, re
 | amount | Long | Yes | Amount in the smallest currency unit (Paise for INR) |
 | currency | String | Yes | ISO 4217 currency code |
 | description | String | No | Payment description |
+| metadata | JSON | No | Business-specific metadata |
 
 ---
 
@@ -166,7 +190,7 @@ Return Response
 
 ---
 
-## Possible Errors
+Possible Errors
 
 ### Validation Error
 
@@ -186,23 +210,25 @@ Example
 
 ---
 
-### Duplicate Order
+### Already Verified
+
+Verification is idempotent.
+
+If the payment has already been verified—either through a previous verification request or through webhook processing—the API returns a successful response.
 
 HTTP
 
-```http
-409 Conflict
-```
+200 OK
 
 Example
 
 ```json
 {
-    "message": "Payment Intent already exists."
+    "paymentReference":"01K...",
+    "status":"SUCCESS",
+    "message":"Payment already verified."
 }
 ```
-
----
 
 ### Gateway Error
 
@@ -291,7 +317,19 @@ Find Payment
 
 ↓
 
-Validate State
+Already SUCCESS?
+
+↓
+
+Yes
+
+↓
+
+Return Success
+
+↓
+
+No
 
 ↓
 
@@ -311,13 +349,127 @@ Update Payment Intent
 
 ↓
 
-Create PAYMENT_SUCCESS Event
+Record Event
 
 ↓
 
-Return Response
+Return Success
 ```
 
+## 7. Add Refund
+```text
+Create Refund
+POST /refunds
+
+Description
+
+Creates a refund against a successful payment.
+
+Supports:
+
+Full Refund
+Partial Refund
+Multiple Partial Refunds
+Request
+{
+"paymentReference":"01K...",
+"amount":50000,
+"reason":"CUSTOMER_REQUEST",
+"speed":"NORMAL",
+"initiator":"MERCHANT",
+"metadata":{
+"ticketId":"SUP-1001"
+}
+}
+Success
+201 Created
+
+Example
+
+{
+"refundReference":"01K...",
+"paymentReference":"01K...",
+"status":"PROCESSING",
+"message":"Refund created successfully."
+}
+Possible Errors
+
+400
+
+Refund amount exceeds remaining refundable amount.
+
+404
+
+Payment not found.
+
+500
+
+Gateway failure.
+```
+
+```text
+8. Get Refund
+
+If implemented.
+
+GET /refunds/{refundReference}
+```
+
+```text
+9. Get Refunds by Payment
+   GET /payments/{paymentReference}/refunds
+```
+10. Webhook Endpoint
+
+This section needs expansion.
+
+Current Supported Events
+
+* payment.authorized
+* 
+* payment.captured
+* 
+* payment.failed
+* 
+* order.paid
+* 
+* refund.processed
+* 
+* refund.failed
+
+### Request Headers
+
+### Headers
+
+| Header | Required | Description |
+|---------|----------|-------------|
+| X-Razorpay-Signature | Yes | Used to verify webhook authenticity |
+
+### Authentication
+
+HMAC SHA256 Verification
+
+### Idempotency
+
+Duplicate webhook deliveries are safely ignored.
+Standard HTTP Status
+
+Add
+
+| 401 | Unauthorized webhook signature (if applicable) |
+| 422 | Business validation failure (future) |
+
+Validation Rules
+
+Add
+
+Refund
+Field	Validation
+paymentReference	Required
+amount	> 0
+speed	Enum
+reason	Enum
+initiator	Enum
 ---
 
 ## Database Updates
@@ -424,22 +576,6 @@ Example
 
 ---
 
-### Already Verified
-
-HTTP
-
-```http
-409 Conflict
-```
-
-Example
-
-```json
-{
-    "message": "Payment is already verified."
-}
-```
-
 ---
 
 ### Invalid Payment State
@@ -536,11 +672,16 @@ Example
 
 # 10. Idempotency
 
-Current Version
+The payment service implements idempotent processing for critical operations.
 
-Idempotency is **not yet implemented**.
+Implemented
 
-Future versions will support idempotent payment creation to prevent duplicate requests caused by retries or network failures.
+- Payment Verification
+- payment.captured webhook
+- refund.processed webhook
+- refund.failed webhook
+
+Duplicate requests do not create duplicate business records or invalid state transitions.
 
 ---
 
@@ -584,36 +725,6 @@ GET /payments/{paymentReference}/events
 
 ---
 
-## Webhook
-
-```http
-POST /webhooks/razorpay
-```
-
-## Razorpay Webhook
-
-### Endpoint
-
-```
-POST /api/v1/webhooks/razorpay
-```
-
-### Description
-
-Receives webhook events from Razorpay whenever a configured payment event occurs.
-
-This endpoint is intended to be called only by Razorpay servers.
-
----
-
-### Headers
-
-| Header | Required | Description |
-|---------|----------|-------------|
-| X-Razorpay-Signature | Yes | Used to verify webhook authenticity |
-
----
-
 ### Request Body
 
 Content-Type
@@ -652,30 +763,53 @@ Returned after successful webhook processing.
 
 ---
 
----
-
-## Refund
-
-```http
-POST /refunds
-```
-
----
 
 ## Payout
 
 ```http
 POST /payouts
+
+GET /settlements
+
+GET /reports
 ```
 
 ---
 
 # API Summary
 
-The current API exposes two production-ready endpoints:
+The current API provides production-ready support for the complete Pay-In and Refund lifecycle.
 
-1. **Create Payment Intent** – Initializes a payment, creates a Razorpay Order, persists business records, and returns the information required to launch Razorpay Checkout.
+Implemented APIs include:
 
-2. **Verify Payment** – Verifies the Razorpay signature, retrieves trusted payment details from Razorpay, updates the payment lifecycle, records audit events, and completes the Pay-In process.
+### Payment Intent
 
-These APIs together implement the complete synchronous Pay-In workflow for the StreamHub Payment Service.
+- Create Payment Intent
+
+### Payments
+
+- Verify Payment
+- Get Payment
+- Get Payment Events
+
+### Refunds
+
+- Create Refund
+- Get Refund
+- Get Refunds by Payment
+
+### Webhooks
+
+- Razorpay Webhook Processing
+
+The APIs support:
+
+- Payment initialization
+- Payment verification
+- Payment event recording
+- Refund creation
+- Refund tracking
+- Webhook processing
+- Idempotent payment and refund handling
+
+Together these APIs implement the complete synchronous and asynchronous payment lifecycle of the StreamHub Payment Service.

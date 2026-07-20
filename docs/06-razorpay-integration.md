@@ -6,12 +6,27 @@ The StreamHub Payment Service integrates with **Razorpay** as the payment gatewa
 
 The integration is designed to isolate all gateway-specific logic from the business layer, allowing future support for additional payment providers without changing business logic.
 
-The current implementation supports:
+The current implementation supports both **Pay-In** and **Refund** operations through Razorpay.
+
+Implemented capabilities include:
+
+### Pay-In
 
 - Order Creation
 - Payment Verification
 - Payment Detail Retrieval
+- Payment Method Mapping
 - Signature Verification
+- Webhook Processing
+
+### Refunds
+
+- Full Refund
+- Partial Refund
+- Multiple Partial Refunds
+- Refund Detail Retrieval
+- Refund Speed (Normal / Optimum)
+- Refund Webhook Processing
 
 The service currently operates in **Test Mode**.
 
@@ -24,19 +39,22 @@ The payment service never communicates with Razorpay directly from the business 
 Instead, all gateway operations pass through the Gateway Layer.
 
 ```text
-                    Payment Service
+                     Payment Service
                            │
-                           ▼
-                  RazorpayService
-                           │
-                           ▼
-                 RazorpayServiceImpl
-                           │
-                           ▼
-                     Razorpay SDK
-                           │
+         ┌─────────────────┴──────────────────┐
+         ▼                                    ▼
+  Business Services                    Gateway Layer
+         │                                    │
+         ▼                                    ▼
+Repositories                     RazorpayServiceImpl
+         │                                    │
+         └─────────────────┬──────────────────┘
                            ▼
                      Razorpay APIs
+                           │
+          ┌────────────────┴────────────────┐
+          ▼                                 ▼
+    REST APIs                      Webhook Events
 ```
 
 This architecture isolates all Razorpay-specific implementation.
@@ -189,7 +207,7 @@ GatewayOrderResponse
 
 The request contains
 
-- Amount
+- Amount (Paise)
 - Currency
 - Receipt
 
@@ -223,6 +241,7 @@ The Payment Service stores
 
 - Gateway Order ID
 - Gateway Name
+- Gateway Status
 
 The frontend receives
 
@@ -301,7 +320,19 @@ Razorpay Checkout returns
 - Gateway Payment ID
 - Gateway Signature
 
-The frontend immediately calls
+After a successful payment, Razorpay Checkout returns:
+
+- Gateway Order ID
+- Gateway Payment ID
+- Gateway Signature
+
+The frontend typically invokes:
+
+POST /payments/verify
+
+However, in production the payment may also be completed through Razorpay webhooks before the frontend verification request arrives.
+
+Both flows are supported and are designed to be idempotent.
 
 ```http
 POST /payments/verify
@@ -334,6 +365,10 @@ Success
 ---
 
 # 11. Signature Verification
+
+Verification is performed locally using the Razorpay SDK and the merchant's Secret Key.
+
+No external API call is required. 
 
 The signature verification uses
 
@@ -410,6 +445,8 @@ After successful signature verification,
 
 the backend fetches payment details directly from Razorpay.
 
+The backend ignores any payment metadata supplied by the frontend and always retrieves trusted information directly from Razorpay.
+
 Flow
 
 ```text
@@ -483,7 +520,7 @@ Advantages
 
 # 15. Gateway Response Storage
 
-The complete Razorpay response is stored.
+The complete response is stored without modification to preserve gateway-specific information for future troubleshooting.
 
 ```text
 payments.gateway_response
@@ -512,6 +549,55 @@ Advantages
 
 ---
 
+Refund Integration
+The Gateway Layer also manages refund operations through Razorpay.
+
+Supported operations include:
+
+- Create Refund
+- Fetch Refund Details
+
+The Refund flow follows the same gateway abstraction used for payments.
+
+```text
+RefundService
+
+↓
+
+Gateway Interface
+
+↓
+
+RazorpayService
+
+↓
+
+Razorpay Refund API
+```
+Supported refund capabilities
+
+* Full Refund
+* Partial Refund
+* Multiple Partial Refunds
+* Refund Speed
+* Refund Notes
+* Gateway Response Storage
+* Webhook Synchronization
+
+### Gateway Idempotency
+## Idempotency
+
+The payment service is designed to safely handle duplicate gateway interactions.
+
+Implemented idempotent flows include:
+
+- Payment Verification
+- payment.captured webhook
+- refund.processed webhook
+- refund.failed webhook
+
+Duplicate requests or webhook deliveries do not create duplicate business records or invalid state transitions.
+
 # 16. Gateway Status
 
 Two status fields exist.
@@ -524,6 +610,10 @@ CREATED
 ↓
 
 SUCCESS
+
+↓
+
+(Refund lifecycle managed separately)
 ```
 
 Gateway Status
@@ -549,11 +639,7 @@ Client
 
 ↓
 
-Create Payment Intent
-
-↓
-
-Payment Service
+Payment Intent API
 
 ↓
 
@@ -561,15 +647,7 @@ Create Razorpay Order
 
 ↓
 
-Return Gateway Information
-
-↓
-
-Frontend
-
-↓
-
-Open Razorpay Checkout
+Frontend Checkout
 
 ↓
 
@@ -577,19 +655,38 @@ Customer Pays
 
 ↓
 
-Verify Payment API
+───────────────┐
+               │
+               ▼
+     Verify Payment API
+               │
+               ▼
+        Verify Signature
+               │
+               ▼
+     Fetch Payment Details
+               │
+               ▼
+       Update Database
+
+               OR
+
+───────────────┐
+               │
+               ▼
+ Razorpay Webhook
 
 ↓
 
-Verify Signature
-
-↓
-
-Fetch Payment Details
+Verify Webhook Signature
 
 ↓
 
 Update Database
+
+↓
+
+Record Events
 ```
 
 ---
@@ -598,13 +695,33 @@ Update Database
 
 Implemented
 
-- Order Creation
-- Signature Verification
-- Fetch Payment Details
-- Public Key Handling
-- Gateway Response Storage
-- Payment Method Mapping
-- Gateway Status Mapping
+✓ Order Creation
+
+✓ Signature Verification
+
+✓ Fetch Payment Details
+
+✓ Public Key Handling
+
+✓ Gateway Response Storage
+
+✓ Payment Method Mapping
+
+✓ Gateway Status Mapping
+
+✓ Payment Webhooks
+
+✓ Refund Creation
+
+✓ Fetch Refund Details
+
+✓ Refund Webhooks
+
+✓ Refund Speed Support
+
+✓ Gateway Notes
+
+✓ JSONB Payload Storage
 
 Verified
 
@@ -634,19 +751,25 @@ Supported Events
 - payment.failed
 - payment.authorized
 - order.paid
+- refund.processed
+- refund.failed
 
-For complete implementation details, refer to:
+Webhook processing is fully implemented and supports idempotent event processing.
+
+A detailed explanation of the webhook lifecycle, supported events, request validation, signature verification, and event routing is available in:
 
 **10-webhook-integration.md**
 
-# 19. Current Limitations
+### 19. Current Limitations
 
 The current implementation does not yet support
 
-- Refund APIs
 - Payout APIs
-- Subscription APIs
 - Settlement APIs
+- Subscription APIs
+- Smart Collect
+- Route
+- Payment Links
 
 These will be implemented in future phases.
 
@@ -656,11 +779,15 @@ These will be implemented in future phases.
 
 Planned Razorpay integrations
 
-- Webhook Processing
-- Refund Management
 - Payout Processing
 - Settlement Reconciliation
+- Smart Collect
+- Route
 - Subscription Billing
+- Multiple Gateway Support
+- Currency Conversion
+- Monitoring & Metrics
+- Distributed Tracing
 - Retry Handling
 
 The current gateway abstraction allows these features to be added with minimal changes to the business layer.

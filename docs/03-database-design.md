@@ -6,11 +6,13 @@ The StreamHub Payment Service uses **PostgreSQL** as its primary relational data
 
 The database is designed to support a complete payment lifecycle while maintaining transactional consistency, auditability, scalability, and future extensibility.
 
-The current implementation consists of three core tables:
+The current implementation consists of five core tables:
 
-- `payment_intents`
-- `payments`
-- `payment_events`
+- payment_intents
+- payments
+- payment_events
+- refunds
+- refund_events
 
 Each table has a clearly defined responsibility and together they model the complete Pay-In lifecycle.
 
@@ -28,25 +30,28 @@ The database design follows these objectives.
 - Store gateway-specific payloads.
 - Provide efficient querying through indexes.
 - Maintain referential integrity.
+- Support full and partial refunds.
+- Support immutable audit events.
+- Support idempotent payment and refund processing.
+- Support asynchronous webhook processing.
 
 ---
 
 # 3. Entity Relationship Diagram
 
 ```text
-                    payment_intents
-                    ----------------
-                           │
-                           │ 1
-                           │
-                           ▼
-                    payments
-                    --------
-                           │
-                           │ 1
-                           │
-                           ▼
-                   payment_events
+payment_intents
+        │
+        │ 1
+        ▼
+payments
+        │
+        ├──────────────┐
+        ▼              ▼
+payment_events      refunds
+                         │
+                         ▼
+                  refund_events
 ```
 
 Relationship
@@ -61,6 +66,14 @@ Many Payments
 ↓
 
 Many Payment Events
+
+↓
+
+Many Refunds
+
+↓
+
+Many Refund Events
 ```
 
 ---
@@ -254,12 +267,15 @@ CREATED
 ↓
 
 SUCCESS
+
+↓
+
+FAILED
 ```
 
 Future
 
 ```text
-FAILED
 
 AUTHORIZED
 
@@ -369,6 +385,199 @@ This table acts as an immutable audit log.
 | created_at | Event timestamp |
 
 ---
+### refunds
+
+Add after payments.
+
+Purpose
+
+Represents a refund initiated against a successful payment.
+
+Supports:
+
+Full refunds
+Partial refunds
+Multiple partial refunds
+Table Structure
+Column	Description
+id	Internal primary key
+refund_reference	Business reference (ULID)
+payment_id	FK to payments
+gateway_refund_id	Razorpay refund identifier
+amount	Refund amount (smallest currency unit)
+currency	ISO currency code
+reason	Business refund reason
+speed	Refund processing speed
+initiator	Merchant/System/Admin
+status	Internal refund status
+gateway_status	Gateway refund status
+metadata	Business metadata (JSONB)
+gateway_response	Complete Razorpay refund payload (JSONB)
+gateway_notes	Gateway notes (JSONB)
+processed_at	Refund completion timestamp
+created_at	Creation timestamp
+updated_at	Last modification timestamp
+
+### Status Lifecycle
+REQUESTED
+
+↓
+
+PROCESSING
+
+↓
+
+SUCCESS
+
+### Failure
+
+REQUESTED
+
+↓
+
+PROCESSING
+
+↓
+
+FAILED
+
+### Metadata
+
+Explain that it stores business-specific information such as:
+
+{
+"ticketId": "SUP-1001",
+"requestedBy": "support-team"
+}
+### refund_events
+Purpose
+
+Stores immutable audit records for every refund state transition.
+
+Table Structure
+Column	Description
+id	Internal primary key
+refund_event_reference	ULID
+refund_id	FK to refunds
+event_type	Refund business event
+event_source	API / WEBHOOK
+event_data	JSONB
+created_at	Event timestamp
+Event Types
+
+### Current
+
+REFUND_REQUESTED
+
+REFUND_SUCCESS
+
+REFUND_FAILED
+
+### Future
+
+REFUND_CANCELLED
+
+REFUND_RETRY
+JSONB Usage
+
+Update table.
+
+Table	Column
+payment_intents	metadata
+payments	gateway_response
+payment_events	event_data
+refunds	metadata
+refunds	gateway_response
+refunds	gateway_notes
+refund_events	event_data
+### Auditing
+
+Your event entities no longer extend BaseEntity, so update this section.
+
+Instead of:
+
+Every entity extends BaseEntity.
+
+write:
+
+Business entities (payment_intents, payments, refunds) extend BaseEntity and include:
+
+- id
+- created_at
+- updated_at
+
+Event entities (payment_events, refund_events) are immutable and maintain:
+
+- id
+- created_at
+
+This accurately reflects your implementation.
+
+### Business References
+
+Current references
+
+payment_intent_reference
+* 
+* payment_reference
+* 
+* payment_event_reference
+* 
+* refund_reference
+* 
+* refund_event_reference
+
+Data Flow
+
+Add refund flows.
+
+### Refund Creation
+Merchant
+
+↓
+
+Validate Payment
+
+↓
+
+Validate Refund Amount
+
+↓
+
+Create Refund
+
+↓
+
+Razorpay Refund API
+
+↓
+
+refunds
+
+↓
+
+refund_events
+
+### Refund Webhook
+Razorpay
+
+↓
+
+refund.processed
+
+↓
+
+Update refunds
+
+↓
+
+Create refund_events
+### Database Integrity
+
+Add:
+
+- Immutable Event Tables
+- Idempotent Processing
 
 ## Relationship
 
@@ -591,6 +800,53 @@ This separation allows future support for:
 
 without changing the business model.
 
+## Why Separate Refunds from Payments?
+
+A payment records the original money collection.
+
+A refund records money returned to the customer.
+
+Keeping them separate supports:
+
+Partial refunds
+Multiple refunds
+Independent lifecycle management
+Clear audit history
+
+### Why Immutable Event Tables?
+
+Payment and refund events are append-only.
+
+Historical records are never modified.
+
+Benefits:
+
+Auditing
+Troubleshooting
+Regulatory compliance
+Event-driven integrations
+
+### Why Store Amounts in the Smallest Currency Unit?
+
+All monetary amounts are stored in the smallest currency unit (for INR, paise).
+
+Benefits:
+
+No floating-point precision issues
+Consistent with Razorpay APIs
+Accurate financial calculations
+
+### Why Manual Mapping?
+
+The project intentionally uses manual DTO mapping instead of MapStruct.
+
+Benefits:
+
+Explicit transformations
+Easier debugging
+Better control over gateway DTOs
+Reduced dependency on annotation processing
+
 ---
 
 ## Why Store JSONB?
@@ -634,12 +890,14 @@ The current database design supports future additions with minimal schema change
 
 Planned enhancements include
 
-- Refund tables
 - Payout tables
 - Settlement tracking
-- Webhook event history
+- Financial reconciliation
+- Webhook delivery history
 - Idempotency records
 - Gateway configuration tables
-- Multiple gateway support
+- Multiple payment gateway support
+- Currency conversion support
+- Reporting and analytics
 
 The current schema provides a scalable foundation for these future capabilities while preserving backward compatibility.

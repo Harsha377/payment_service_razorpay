@@ -11,11 +11,10 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class PaymentMapper {
+
     public CreatePaymentIntentResponse toCreatePaymentIntentResponse(
-            PaymentIntentEntity paymentIntent,
-            PaymentEntity payment,
-            GatewayOrderResponse gatewayOrder
-    ) {
+            PaymentIntentEntity paymentIntent, PaymentEntity payment,
+            String gatewayKey ) {
 
         return CreatePaymentIntentResponse.builder()
                 .paymentIntentReference(paymentIntent.getPaymentIntentReference())
@@ -24,10 +23,18 @@ public class PaymentMapper {
                 .amount(payment.getAmount())
                 .currency(payment.getCurrency())
                 .status(payment.getStatus())
-                .gatewayKey(gatewayOrder.getKeyId())
-                .gatewayName(gatewayOrder.getGatewayName())
+                .gatewayKey(gatewayKey)
+                .gatewayName(payment.getGatewayName())
                 .build();
     }
+
+    public CreatePaymentIntentResponse toCreatePaymentIntentResponse(
+            PaymentIntentEntity paymentIntent, PaymentEntity payment,
+            GatewayOrderResponse gatewayOrder) {
+
+        return toCreatePaymentIntentResponse(paymentIntent, payment, gatewayOrder.getKeyId());
+    }
+
     public PaymentResponse toPaymentResponse(
             PaymentEntity payment
     ) {
@@ -47,6 +54,7 @@ public class PaymentMapper {
                 .paidAt(payment.getPaidAt())
                 .build();
     }
+
     public PaymentEventResponse toPaymentEventResponse(
             PaymentEventEntity paymentEvent
     ) {

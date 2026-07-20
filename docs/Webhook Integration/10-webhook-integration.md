@@ -866,6 +866,31 @@ Return HTTP 200.
 
 The webhook has now been processed successfully.
 
+```text
+Find Payment
+
+↓
+
+Already SUCCESS?
+
+↓
+
+Yes
+
+↓
+
+Ignore duplicate webhook
+
+↓
+
+Return HTTP 200
+
+No
+
+↓
+
+Complete Payment
+```
 ---
 
 # 25. Database Changes for payment.captured
@@ -1019,6 +1044,48 @@ PAYMENT_FAILED
 
 ---
 
+### Refund Webhook Flow
+
+refund.processed
+
+↓
+
+Verify Signature
+
+↓
+
+Find Refund
+
+↓
+
+Fetch Refund Details
+
+↓
+
+Update Refund Status
+
+↓
+
+Create REFUND_SUCCESS Event
+
+↓
+
+Return HTTP 200
+
+And similarly for:
+
+refund.failed
+
+↓
+
+Update Refund Status = FAILED
+
+↓
+
+Create REFUND_FAILED Event
+
+---
+
 # 28. payment.authorized Event
 
 Meaning
@@ -1123,12 +1190,14 @@ There is nothing left to update.
 
 The following table summarizes database updates performed for each supported webhook.
 
-| Webhook Event | Payment | Payment Intent | Payment Event |
-|---------------|---------|----------------|---------------|
-| payment.captured | SUCCESS | COMPLETED | PAYMENT_SUCCESS |
-| payment.failed | FAILED | No Change | PAYMENT_FAILED |
-| payment.authorized | No Change | No Change | No Change |
-| order.paid | No Change | No Change | No Change |
+| Webhook Event      | Payment    | Refund      | Event           |
+|--------------------|------------|-------------|-----------------|
+| payment.captured   | SUCCESS    | —           | PAYMENT_SUCCESS |
+| payment.failed     | FAILED     | —           | PAYMENT_FAILED  |
+| refund.processed   | —          | SUCCESS     | REFUND_SUCCESS  |
+| refund.failed      | —          | FAILED      | REFUND_FAILED   |
+| payment.authorized | No Change  | No Change   | No Change       |
+| order.paid         | No Change  | No Change   | No Change       |
 
 This table represents the current implementation of the StreamHub Payment Service webhook processing.
 
@@ -1136,6 +1205,15 @@ This table represents the current implementation of the StreamHub Payment Servic
 # 31. Error Handling
 
 The webhook endpoint validates every incoming request before processing any business logic.
+
+| Scenario          | Result                |
+| ----------------- | --------------------- |
+| Invalid signature | HTTP 400              |
+| Malformed payload | HTTP 400              |
+| Payment not found | Log + reject          |
+| Refund not found  | Log + reject          |
+| Duplicate webhook | Ignore and return 200 |
+| Database failure  | Rollback + 500        |
 
 The following validations are performed.
 
@@ -1403,6 +1481,20 @@ Expected Result
 - Logs Generated
 - No Database Updates
 
+### refund.processed
+
+Expected
+
+- Refund Status → SUCCESS
+- Refund Event Created
+
+### refund.failed
+
+Expected
+
+- Refund Status → FAILED
+- Refund Event Created
+
 ---
 
 ## Invalid Signature
@@ -1437,7 +1529,6 @@ No duplicate database updates.
 
 The following improvements should be considered before deploying to production.
 
-- Idempotent webhook processing.
 - Monitoring and alerting.
 - Retry handling.
 - Audit logging.
@@ -1446,6 +1537,11 @@ The following improvements should be considered before deploying to production.
 - Metrics collection.
 - Centralized logging.
 - Distributed tracing.
+- Correlation IDs 
+- Dead-letter queue (if asynchronous processing is introduced later)
+- Webhook retry monitoring 
+- Alerting for repeated webhook failures 
+- Metrics for processing latency
 
 These improvements increase reliability and operational visibility.
 
@@ -1457,7 +1553,6 @@ The current implementation focuses only on the payment lifecycle.
 
 Future webhook support may include
 
-- Refund Events
 - Settlement Events
 - Payout Events
 - Subscription Events
@@ -1491,16 +1586,26 @@ The webhook implementation provides
 
 Currently supported webhook events
 
-- payment.captured
-- payment.failed
-- payment.authorized
-- order.paid
+* payment.captured
+* payment.failed
+* payment.authorized
+* order.paid
+* refund.processed
+* refund.failed
 
 The webhook implementation ensures that payment status remains accurate even if the frontend fails to notify the backend.
 
 This makes the payment service more reliable, fault tolerant, and suitable for production environments.
 
 ---
+
+## Architecture Decisions
+
+• Webhook processing is idempotent.
+• Business logic is isolated from Razorpay behind the Gateway Layer.
+• Payment events and refund events are immutable.
+• Signature verification occurs before any database operation.
+• Business entities are updated within a single transaction.
 
 # 40. Conclusion
 

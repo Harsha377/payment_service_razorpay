@@ -96,6 +96,22 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public PaymentEntity findPaymentByPaymentIntent(PaymentIntentEntity paymentIntent) {
+        return paymentRepository.findByPaymentIntent(paymentIntent)
+                .orElseThrow(()->new ResourceNotFoundException("Payment not found."));
+    }
+    @Override
+    @Transactional(readOnly = true)
+    public PaymentEntity findByPaymentReference(String paymentReference) {
+
+        return paymentRepository
+                .findByPaymentReference(paymentReference)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Payment not found."));
+    }
+
+    @Override
     public PaymentResponse getPayment(String paymentReference) {
         return null;
     }

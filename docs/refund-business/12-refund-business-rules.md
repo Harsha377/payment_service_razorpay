@@ -1,196 +1,317 @@
-# Refund Service Roadmap
+# Refund Business Rules
 
-## Overview
+## 1. Overview
 
-The Refund Service is responsible for returning money to customers after a successful payment.
+This document defines the business rules governing the Refund module within the StreamHub Payment Service.
 
-Unlike the Payment Service, where money flows from the customer to the merchant, the Refund Service manages the reverse flow—from the merchant back to the customer through Razorpay.
+These rules ensure that refunds are processed consistently, securely, and accurately while maintaining transactional integrity and a complete audit trail.
 
-The Refund Service is designed as a production-ready, extensible module that supports auditing, webhook processing, partial refunds, idempotency, and future financial reconciliation.
-
----
-
-# Goals
-
-The Refund Service should provide:
-
-- Production-grade refund lifecycle.
-- Full and partial refunds.
-- Multiple partial refunds.
-- Secure Razorpay integration.
-- Complete audit history.
-- Webhook-driven status synchronization.
-- Idempotent processing.
-- Extensible architecture.
+Business rules are enforced before any communication with Razorpay or any database updates.
 
 ---
 
-# Current Scope (Version 1)
+# 2. Objectives
 
-The following features will be implemented in Version 1.
+The Refund module is responsible for:
 
----
-
-## Phase 8.1 – Business Understanding
-
-Understand the refund domain before implementation.
-
-### Refund Types
-
-- Full Refund
-- Partial Refund
-- Multiple Partial Refunds
-
-### Refund Speed
-
-- Normal Refund
-- Instant Refund (if supported by the gateway/account)
-
-### Refund Scenarios
-
-- Customer cancelled the order.
-- Merchant cancelled the order.
-- Duplicate payment.
-- Fraud detected.
-- Customer support approved.
-- Merchant initiated refund.
+- Returning funds to customers.
+- Supporting full refunds.
+- Supporting partial refunds.
+- Supporting multiple partial refunds.
+- Preventing over-refunding.
+- Maintaining refund history.
+- Recording refund events.
+- Synchronizing refund status with Razorpay.
 
 ---
 
-## Refund Lifecycle
+# 3. Payment Eligibility Rules
 
-```
-Payment SUCCESS
+A refund can only be created for an existing payment.
 
-↓
+Rule
 
-Refund Requested
-
-↓
-
-Refund Processing
-
-↓
-
-Refund Successful
+```text
+Payment Must Exist
 ```
 
-Alternative flow
+If the payment does not exist
 
-```
-Payment SUCCESS
-
-↓
-
-Refund Requested
-
-↓
-
-Refund Failed
+```text
+HTTP 404 Not Found
 ```
 
 ---
 
-## Deliverable
+A refund is allowed only for successful payments.
 
+Allowed Status
+
+```text
+SUCCESS
 ```
-11-refund-overview.md
+
+Rejected Statuses
+
+```text
+CREATED
+
+FAILED
+
+CANCELLED
+
+EXPIRED
 ```
 
 ---
 
-# Phase 8.2 – Functional Requirements
+# 4. Refund Amount Rules
 
-Version 1 supports
+The refund amount must always be greater than zero.
 
-- Full Refund
-- Partial Refund
-- Multiple Partial Refunds
-- Refund History
-- Refund Status Tracking
-- Refund Events
-- Razorpay Refund API
-- Razorpay Refund Webhooks
-- Refund Speed Selection
-- Refund Audit Trail
+Allowed
 
----
-
-# Phase 8.3 – Database Design
-
-## Tables
-
-### refunds
-
-Stores refund transactions.
-
-### refund_events
-
-Stores immutable refund event history.
-
----
-
-## Relationships
-
+```text
+Amount > 0
 ```
-PaymentIntent
 
-1
+Rejected
+
+```text
+Amount <= 0
+```
+
+---
+
+The refund amount must not exceed the remaining refundable amount.
+
+Formula
+
+```text
+Remaining Refundable
+
+=
+
+Payment Amount
+
+-
+
+Total Successful Refund Amount
+```
+
+Example
+
+```text
+Payment
+
+₹1000
 
 ↓
 
-Many Payments
+Refunded
 
-1
-
-↓
-
-Many Refunds
-
-1
+₹300
 
 ↓
 
-Many Refund Events
+Remaining
+
+₹700
+```
+
+Allowed
+
+```text
+Refund ₹500
+```
+
+Rejected
+
+```text
+Refund ₹800
 ```
 
 ---
 
-## Refund Table Responsibilities
+# 5. Full Refund Rules
 
-Store
+A full refund returns the complete payment amount.
 
-- Refund Reference
-- Payment Reference
-- Gateway Refund Id
-- Refund Amount
-- Refund Reason
-- Refund Speed
+Example
+
+```text
+Payment
+
+₹1000
+
+↓
+
+Refund
+
+₹1000
+
+↓
+
+Remaining
+
+₹0
+```
+
+After a full refund
+
+No further refunds are permitted.
+
+---
+
+# 6. Partial Refund Rules
+
+Partial refunds return only part of the payment amount.
+
+Example
+
+```text
+Payment
+
+₹1000
+
+↓
+
+Refund
+
+₹250
+
+↓
+
+Remaining
+
+₹750
+```
+
+Multiple partial refunds are supported until the remaining refundable amount reaches zero.
+
+---
+
+# 7. Multiple Partial Refund Rules
+
+The service allows multiple refund requests against the same payment.
+
+Example
+
+```text
+Payment
+
+₹1000
+
+↓
+
+Refund
+
+₹300
+
+↓
+
+Remaining
+
+₹700
+
+↓
+
+Refund
+
+₹200
+
+↓
+
+Remaining
+
+₹500
+
+↓
+
+Refund
+
+₹500
+
+↓
+
+Remaining
+
+₹0
+```
+
+The combined successful refund amount must never exceed the original payment amount.
+
+---
+
+# 8. Currency Rules
+
+Refunds always use the same currency as the original payment.
+
+Example
+
+```text
+Payment
+
+INR
+
+↓
+
+Refund
+
+INR
+```
+
+Currency conversion is not supported.
+
+---
+
+# 9. Gateway Rules
+
+Refunds are always created through Razorpay.
+
+Business services never communicate directly with the Razorpay SDK.
+
+Architecture
+
+```text
+Refund Service
+
+↓
+
+Gateway Interface
+
+↓
+
+Razorpay Service
+
+↓
+
+Razorpay API
+```
+
+---
+
+# 10. Source of Truth Rules
+
+The Payment Service never trusts refund information supplied by clients.
+
+Instead
+
 - Refund Status
-- Gateway Response
-- Requested By
-- Requested At
-- Processed At
+- Gateway Status
+- Gateway Refund ID
+
+are retrieved directly from Razorpay.
+
+Razorpay is considered the source of truth.
 
 ---
 
-## Database Design
+# 11. Refund Status Rules
 
-Design
+Current lifecycle
 
-- Primary Keys
-- Foreign Keys
-- Unique Constraints
-- Indexes
-- Check Constraints
-
----
-
-# Phase 8.4 – Refund State Machine
-
-Define refund lifecycle.
-
-```
+```text
 REQUESTED
 
 ↓
@@ -202,295 +323,124 @@ PROCESSING
 SUCCESS
 ```
 
-Alternative
+Failure lifecycle
 
-```
+```text
 REQUESTED
+
+↓
+
+PROCESSING
 
 ↓
 
 FAILED
 ```
 
-Define
-
-- Allowed State Transitions
-- Invalid State Transitions
-- Terminal States
+Only valid state transitions are allowed.
 
 ---
 
-# Phase 8.5 – API Design
+# 12. Refund Reference Rules
 
-Design REST APIs.
+Every refund receives a unique business reference.
 
-### Create Refund
+The reference
 
+- Uses ULID.
+- Is globally unique.
+- Is externally exposed.
+
+Database IDs are never exposed outside the service.
+
+---
+
+# 13. Gateway Response Rules
+
+The complete Razorpay refund response is stored.
+
+Purpose
+
+- Audit history.
+- Easier debugging.
+- Future compatibility.
+
+Storage
+
+```text
+refunds.gateway_response
 ```
-POST /refunds
+
+using PostgreSQL JSONB.
+
+---
+
+# 14. Gateway Notes Rules
+
+Gateway notes are optional.
+
+If provided
+
+- They are forwarded to Razorpay.
+- They are stored for future reference.
+
+---
+
+# 15. Metadata Rules
+
+Refund metadata is optional.
+
+Metadata
+
+- Is stored using JSONB.
+- Can contain business-specific information.
+- Is never interpreted by the Payment Service.
+
+Example
+
+```json
+{
+  "ticketId":"SUP-1001",
+  "requestedBy":"Support Team"
+}
 ```
 
-### Get Refund
+---
 
+# 16. Refund Event Rules
+
+Every significant refund operation creates a refund event.
+
+Current events
+
+```text
+REFUND_REQUESTED
+
+REFUND_SUCCESS
+
+REFUND_FAILED
 ```
-GET /refunds/{refundReference}
-```
 
-### List Refunds
+Events are immutable.
 
-```
-GET /payments/{paymentReference}/refunds
-```
-
-Define
-
-- Request DTOs
-- Response DTOs
-- Validation Rules
-- Error Responses
+Existing events are never modified or deleted.
 
 ---
 
-# Phase 8.6 – Razorpay Integration
+# 17. Transaction Rules
 
-Study and integrate
+The following operations execute within a single database transaction.
 
-- Create Refund API
-- Fetch Refund API
-- Refund Status
-- Refund Failure
-- Refund Speed
-- Gateway Response
-
----
-
-# Phase 8.7 – Business Rules
-
-Validate
-
-- Payment must exist.
-- Payment must be SUCCESS.
-- Refund amount must be greater than zero.
-- Refund amount cannot exceed remaining refundable amount.
-- Multiple partial refunds are allowed.
-- Total refunded amount cannot exceed payment amount.
-- Gateway Refund Id must be unique.
-- Refund Reference must be unique.
-
-Calculate
-
-- Total Refunded Amount.
-- Remaining Refundable Amount.
-
----
-
-# Phase 8.8 – Core Implementation
-
-Implement
-
-- Flyway Migrations
-- Entities
-- Repositories
-- DTOs
-- Services
-- Mappers
-- Validation
-- Gateway Integration
-- Refund Processing
-
----
-
-# Phase 8.9 – Refund Webhooks
-
-Implement webhook support.
-
-Supported Events
-
-- refund.processed
-- refund.failed
-
-Webhook Responsibilities
-
-- Verify Signature
-- Parse Payload
-- Route Event
-- Update Refund
-- Record Refund Event
-- Idempotent Processing
-
----
-
-# Phase 8.10 – Idempotency
-
-Prevent duplicate processing.
-
-Support
-
-- Duplicate refund requests.
-- Duplicate webhook deliveries.
-- Duplicate refund events.
-
----
-
-# Phase 8.11 – Testing
-
-Test
-
-- Full Refund
-- Partial Refund
-- Multiple Partial Refunds
-- Invalid Refund Amount
-- Duplicate Refund
-- Refund Failure
-- Refund Webhook
-- Duplicate Webhook
-- Refund Validation
-- Remaining Refundable Amount
-
----
-
-# Phase 8.12 – Production Hardening
-
-Review
-
-- Logging
-- Exception Handling
-- Transactions
-- Concurrency
-- Idempotency
-- Security
-- Performance
-
----
-
-# Phase 8.13 – Documentation
-
-Prepare
-
-- Refund Overview
-- Refund API
-- Refund Webhooks
-- Testing Guide
-
----
-
-# Future Enhancements
-
-The following features are intentionally excluded from Version 1.
-
----
-
-## Settlement Tracking
-
-Track
-
-- Settlement Status
-- Settlement Date
-- Gateway Fee
-- GST
-- Net Settlement Amount
-- Settlement Reports
-
----
-
-## Merchant Financial Reporting
-
-Track
-
-- Merchant Earnings
-- Total Refunded Amount
-- Outstanding Refund Amount
-- Settlement History
-
----
-
-## Payout Service
-
-Implement
-
-- Contacts
-- Fund Accounts
-- Payouts
-- Payout Webhooks
-- Bank Transfers
-- UPI Transfers
-
----
-
-## Financial Reconciliation
-
-Compare
-
-- Internal Database
-- Razorpay
-- Bank Settlement
-
-Detect
-
-- Missing Payments
-- Settlement Mismatch
-- Refund Mismatch
-
----
-
-## Monitoring & Metrics
-
-Monitor
-
-- Refund Success Rate
-- Refund Failure Rate
-- Webhook Success Rate
-- API Latency
-- Processing Time
-
----
-
-## Advanced Refund Features
-
-Future capabilities
-
-- Scheduled Refunds
-- Bulk Refunds
-- Approval Workflow
-- Refund Analytics
-- Customer Notification Integration
-- Automatic Refund Rules
-- Retry Policies
-
----
-
-# High-Level Implementation Flow
-
-```
-Merchant
+```text
+Validate Refund
 
 ↓
 
-Create Refund Request
+Create Refund
 
 ↓
 
-Validate Business Rules
-
-↓
-
-Create Refund Record
-
-↓
-
-Call Razorpay Refund API
-
-↓
-
-Store Gateway Response
-
-↓
-
-Receive Razorpay Webhook
-
-↓
-
-Update Refund Status
+Persist Refund
 
 ↓
 
@@ -498,36 +448,114 @@ Create Refund Event
 
 ↓
 
-Return Refund Status
+Commit
+```
+
+If any database operation fails
+
+```text
+Rollback
+```
+
+No partial data remains.
+
+---
+
+# 18. Idempotency Rules
+
+Refund processing must be idempotent.
+
+Duplicate webhook deliveries
+
+```text
+↓
+
+Ignored
+```
+
+Duplicate processing must not
+
+- Create duplicate events.
+- Update the refund multiple times.
+- Produce inconsistent data.
+
+---
+
+# 19. Security Rules
+
+The Razorpay Secret Key
+
+- Never leaves the backend.
+- Is never exposed through APIs.
+- Is used only for server-side gateway communication.
+
+Webhook authenticity is verified using
+
+```text
+X-Razorpay-Signature
 ```
 
 ---
 
-# Architecture
+# 20. Error Handling Rules
 
-```
-PaymentIntent
-      │
-      └──────────────┐
-                     │
-                 Payment
-                     │
-         ┌───────────┴───────────┐
-         │                       │
-     Payment Events          Refunds
-                                  │
-                                  │
-                           Refund Events
-```
+The service rejects requests when:
+
+- Payment does not exist.
+- Payment is not successful.
+- Refund amount is invalid.
+- Refund amount exceeds the remaining refundable amount.
+- Gateway request fails.
+- Webhook signature is invalid.
+
+Appropriate HTTP responses are returned.
 
 ---
 
-# Design Principles
+# 21. Audit Rules
 
-- Every refund belongs to a successful payment.
-- Refunds never belong directly to PaymentIntent.
-- Every refund is fully auditable.
-- Every state change is event-driven.
-- Webhooks are the source of truth for asynchronous updates.
-- Business operations must be idempotent.
-- The Refund Service is independent of settlement and payout modules.
+Every refund operation is fully traceable.
+
+Stored information includes
+
+- Refund Reference
+- Gateway Refund ID
+- Refund Status
+- Refund Amount
+- Gateway Response
+- Refund Events
+- Created Timestamp
+- Updated Timestamp
+
+This provides a complete audit history.
+
+---
+
+# 22. Future Business Rules
+
+Future versions will introduce additional rules for:
+
+- Scheduled Refunds
+- Instant Refunds
+- Bulk Refunds
+- Settlement Validation
+- Refund Approval Workflow
+- Multi-Gateway Refunds
+- Currency Conversion
+
+---
+
+# 23. Summary
+
+The Refund Business Rules ensure that refund processing remains secure, predictable, and consistent.
+
+The current implementation guarantees:
+
+- Refunds are created only for successful payments.
+- Over-refunding is prevented.
+- Multiple partial refunds are supported.
+- Razorpay remains the source of truth.
+- Every refund operation is audited through immutable refund events.
+- All critical operations execute transactionally.
+
+These rules provide a solid foundation for a production-ready refund processing system while allowing future enhancements without compromising data integrity.
