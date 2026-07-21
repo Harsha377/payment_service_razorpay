@@ -18,6 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/refunds")
 @RequiredArgsConstructor
+@CrossOrigin(origins = "*")
 public class RefundController {
     private final RefundService refundService;
 

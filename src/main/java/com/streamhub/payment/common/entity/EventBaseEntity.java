@@ -15,7 +15,7 @@ import java.time.OffsetDateTime;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
-public class EventBaseEntity {
+public abstract class EventBaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
