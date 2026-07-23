@@ -5,15 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.razorpay.*;
 import com.streamhub.payment.common.exception.ApiException;
 import com.streamhub.payment.common.exception.BadRequestException;
-import com.streamhub.payment.gateway.dto.request.GatewayOrderRequest;
-import com.streamhub.payment.gateway.dto.request.GatewayPaymentVerificationRequest;
-import com.streamhub.payment.gateway.dto.request.GatewayRefundRequest;
-import com.streamhub.payment.gateway.dto.request.GatewayWebhookVerificationRequest;
-import com.streamhub.payment.gateway.dto.response.GatewayOrderResponse;
-import com.streamhub.payment.gateway.dto.response.GatewayPaymentDetailsResponse;
-import com.streamhub.payment.gateway.dto.response.GatewayRefundDetailsResponse;
-import com.streamhub.payment.gateway.dto.response.GatewayRefundResponse;
-import com.streamhub.payment.gateway.properties.RazorpayProperties;
+import com.streamhub.payment.gateway.client.RazorpayXClient;
+import com.streamhub.payment.gateway.config.properties.RazorpayProperties;
+import com.streamhub.payment.gateway.dto.request.*;
+import com.streamhub.payment.gateway.dto.response.*;
 import com.streamhub.payment.gateway.service.RazorpayService;
 import com.streamhub.payment.gateway.util.RazorpayPaymentMethodMapper;
 import com.streamhub.payment.payment.enums.PaymentGateway;
@@ -31,6 +26,7 @@ public class RazorpayServiceImpl implements RazorpayService {
     private final RazorpayClient razorpayClient;
     private final RazorpayProperties razorpayProperties;
     private final ObjectMapper objectMapper;
+    private final RazorpayXClient razorpayXClient;
 
     @Override
     public GatewayOrderResponse createOrder(GatewayOrderRequest request) {
@@ -169,6 +165,16 @@ public class RazorpayServiceImpl implements RazorpayService {
           throw new ApiException( "Failed to map Razorpay refund response.",
                   HttpStatus.INTERNAL_SERVER_ERROR);
        }
+    }
+
+    @Override
+    public GatewayContactResult  createContact(GatewayContactRequest request) {
+        return razorpayXClient.createContact(request);
+    }
+
+    @Override
+    public GatewayFundAccountResult createFundAccount(GatewayFundAccountRequest request) {
+        return razorpayXClient.createFundAccount(request);
     }
 
 

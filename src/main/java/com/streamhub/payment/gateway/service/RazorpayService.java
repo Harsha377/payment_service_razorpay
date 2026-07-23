@@ -1,13 +1,7 @@
 package com.streamhub.payment.gateway.service;
 
-import com.streamhub.payment.gateway.dto.request.GatewayOrderRequest;
-import com.streamhub.payment.gateway.dto.request.GatewayPaymentVerificationRequest;
-import com.streamhub.payment.gateway.dto.request.GatewayRefundRequest;
-import com.streamhub.payment.gateway.dto.request.GatewayWebhookVerificationRequest;
-import com.streamhub.payment.gateway.dto.response.GatewayOrderResponse;
-import com.streamhub.payment.gateway.dto.response.GatewayPaymentDetailsResponse;
-import com.streamhub.payment.gateway.dto.response.GatewayRefundDetailsResponse;
-import com.streamhub.payment.gateway.dto.response.GatewayRefundResponse;
+import com.streamhub.payment.gateway.dto.request.*;
+import com.streamhub.payment.gateway.dto.response.*;
 
 
 public interface RazorpayService {
@@ -20,6 +14,9 @@ public interface RazorpayService {
     );
     GatewayRefundResponse createRefund(GatewayRefundRequest request);
     GatewayRefundDetailsResponse fetchRefund(String gatewayRefundId);
+
+    GatewayContactResult  createContact(GatewayContactRequest request);
+    GatewayFundAccountResult createFundAccount(GatewayFundAccountRequest request);
 
 }
 

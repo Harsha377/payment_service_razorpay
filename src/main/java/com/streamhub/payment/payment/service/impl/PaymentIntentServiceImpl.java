@@ -6,7 +6,7 @@ import com.streamhub.payment.common.exception.ResourceNotFoundException;
 import com.streamhub.payment.common.util.UlidGenerator;
 import com.streamhub.payment.gateway.dto.request.GatewayOrderRequest;
 import com.streamhub.payment.gateway.dto.response.GatewayOrderResponse;
-import com.streamhub.payment.gateway.properties.RazorpayProperties;
+import com.streamhub.payment.gateway.config.properties.RazorpayProperties;
 import com.streamhub.payment.gateway.service.RazorpayService;
 import com.streamhub.payment.idempotency.config.HashGenerator;
 import com.streamhub.payment.idempotency.entity.IdempotencyKeyEntity;

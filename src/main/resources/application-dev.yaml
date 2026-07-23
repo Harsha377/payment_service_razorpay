@@ -26,9 +26,10 @@ logging:
 
 
 razorpay:
-  key-id: rzp_test_TG8BX9I5Edx12t
-  key-secret: FdRjYYJTAkDbfpMQMPvRyN5V
+  key-id: rzp_test_TGB5SSI58jepzN
+  key-secret: wchz8Kd3jVS2b5Kyq0L0M4GS
   webhook-secret: qspQ_HW4hxV9BSt
+  base-url: https://api.razorpay.com/v1
 
 
 idempotency:
