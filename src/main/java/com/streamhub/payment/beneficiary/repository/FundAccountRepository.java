@@ -2,6 +2,7 @@ package com.streamhub.payment.beneficiary.repository;
 
 import com.streamhub.payment.beneficiary.entity.BeneficiaryEntity;
 import com.streamhub.payment.beneficiary.entity.FundAccountEntity;
+import com.streamhub.payment.beneficiary.enums.FundAccountStatus;
 import com.streamhub.payment.beneficiary.enums.FundAccountType;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -18,11 +19,17 @@ public interface FundAccountRepository extends JpaRepository<FundAccountEntity,L
             BeneficiaryEntity beneficiary,
             FundAccountType fundAccountType
     );
-    Optional<FundAccountEntity>
-    findByBeneficiaryAndFundAccountType(
+    Optional<FundAccountEntity> findByBeneficiaryAndFundAccountType(
             BeneficiaryEntity beneficiary,
-            FundAccountType fundAccountType
-    );
+            FundAccountType fundAccountType);
+
+    /**
+     * Get all fund accounts of a beneficiary.
+     */
+    List<FundAccountEntity> findByBeneficiaryOrderByCreatedAtDesc(
+            BeneficiaryEntity beneficiary);
 
     boolean existsByBeneficiaryAndIsDefaultTrue(BeneficiaryEntity beneficiary);
+
+    List<FundAccountEntity> findByBeneficiaryAndStatusOrderByCreatedAtAsc(BeneficiaryEntity beneficiary, FundAccountStatus fundAccountStatus);
 }

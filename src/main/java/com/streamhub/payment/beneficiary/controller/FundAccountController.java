@@ -1,16 +1,16 @@
 package com.streamhub.payment.beneficiary.controller;
 
 import com.streamhub.payment.beneficiary.dto.request.CreateFundAccountRequest;
-import com.streamhub.payment.beneficiary.dto.response.CreateFundAccountResponse;
+import com.streamhub.payment.beneficiary.dto.response.*;
 import com.streamhub.payment.beneficiary.service.FundAccountService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -29,4 +29,32 @@ public class FundAccountController {
                 .status(HttpStatus.CREATED)
                 .body(response);
     }
+
+    @PatchMapping("/{fundAccountReference}/default")
+    public ResponseEntity<SetDefaultFundAccountResponse> setDefaultFundAccount(@PathVariable String fundAccountReference){
+        SetDefaultFundAccountResponse response=fundAccountService.setDefaultFundAccount(fundAccountReference);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{fundAccountReference}")
+    public ResponseEntity<FundAccountResponse> getFundAccount(
+            @PathVariable String fundAccountReference) {
+
+        FundAccountResponse response =
+                fundAccountService.getFundAccount(fundAccountReference);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/{fundAccountReference}")
+    public ResponseEntity<DeleteFundAccountResponse> deleteFundAccount(
+            @PathVariable String fundAccountReference) {
+
+        DeleteFundAccountResponse response =
+                fundAccountService.deleteFundAccount(fundAccountReference);
+
+        return ResponseEntity.ok(response);
+    }
+
+
 }
