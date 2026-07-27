@@ -6,7 +6,4 @@ import com.streamhub.payment.gateway.dto.response.GatewayWebhookEventResponse;
 public interface WebhookService {
 
     void processWebhook(GatewayWebhookVerificationRequest request);
-    GatewayWebhookEventResponse parseWebhook(
-            String payload
-    );
 }

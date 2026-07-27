@@ -177,6 +177,16 @@ public class RazorpayServiceImpl implements RazorpayService {
         return razorpayXClient.createFundAccount(request);
     }
 
+    @Override
+    public GatewayPayoutResult createPayout(GatewayPayoutRequest request) {
+        return razorpayXClient.createPayout(request);
+    }
+
+    @Override
+    public GatewayPayoutDetailsResponse fetchPayout(String gatewayPayoutId) {
+        return razorpayXClient.fetchPayout(gatewayPayoutId);
+    }
+
 
 }
 

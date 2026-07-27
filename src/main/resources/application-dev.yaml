@@ -31,6 +31,9 @@ razorpay:
   webhook-secret: qspQ_HW4hxV9BSt
   base-url: https://api.razorpay.com/v1
 
+razorpayx:
+  source-account-number: 232323005523
+
 
 idempotency:
   cleanup:

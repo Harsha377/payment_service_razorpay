@@ -32,4 +32,6 @@ public interface FundAccountRepository extends JpaRepository<FundAccountEntity,L
     boolean existsByBeneficiaryAndIsDefaultTrue(BeneficiaryEntity beneficiary);
 
     List<FundAccountEntity> findByBeneficiaryAndStatusOrderByCreatedAtAsc(BeneficiaryEntity beneficiary, FundAccountStatus fundAccountStatus);
+
+    Optional<FundAccountEntity> findByBeneficiaryAndIsDefaultTrueAndStatus(BeneficiaryEntity beneficiary, FundAccountStatus fundAccountStatus);
 }

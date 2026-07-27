@@ -18,6 +18,10 @@ public interface RazorpayService {
     GatewayContactResult  createContact(GatewayContactRequest request);
     GatewayFundAccountResult createFundAccount(GatewayFundAccountRequest request);
 
+    GatewayPayoutResult createPayout(GatewayPayoutRequest request);
+
+    GatewayPayoutDetailsResponse fetchPayout(String gatewayPayoutId);
+
 }
 
 

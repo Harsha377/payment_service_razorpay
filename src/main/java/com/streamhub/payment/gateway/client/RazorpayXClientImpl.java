@@ -1,14 +1,13 @@
 package com.streamhub.payment.gateway.client;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.streamhub.payment.common.exception.ApiException;
 import com.streamhub.payment.gateway.dto.request.GatewayContactRequest;
 import com.streamhub.payment.gateway.dto.request.GatewayFundAccountRequest;
-import com.streamhub.payment.gateway.dto.response.GatewayContactResponse;
-import com.streamhub.payment.gateway.dto.response.GatewayContactResult;
-import com.streamhub.payment.gateway.dto.response.GatewayFundAccountResponse;
-import com.streamhub.payment.gateway.dto.response.GatewayFundAccountResult;
+import com.streamhub.payment.gateway.dto.request.GatewayPayoutRequest;
+import com.streamhub.payment.gateway.dto.response.*;
 import com.streamhub.payment.gateway.enums.RazorpayContactType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,8 +43,7 @@ public class RazorpayXClientImpl implements RazorpayXClient {
                                 log.error("Razorpay Contact API failed. Status: {}, Response: {}",
                                         responseData.getStatusCode(), errorBody);
 
-                                throw new ApiException("Razorpay Contact API failed.",
-                                        HttpStatus.BAD_GATEWAY);
+                                throw buildGatewayException(errorBody, HttpStatus.BAD_GATEWAY);
                             })
                     .body(JsonNode.class);
             if (gatewayResponse == null) {
@@ -126,9 +124,8 @@ public class RazorpayXClientImpl implements RazorpayXClient {
                                         responseData.getStatusCode(),
                                         errorBody);
 
-                                throw new ApiException(
-                                        "Razorpay Fund Account API failed.",
-                                        HttpStatus.BAD_GATEWAY);})
+                                throw buildGatewayException(errorBody, HttpStatus.BAD_GATEWAY);
+                            })
                     .body(JsonNode.class);
 
             if (gatewayResponse == null) {
@@ -190,6 +187,154 @@ public class RazorpayXClientImpl implements RazorpayXClient {
         }
 
         return body;
+    }
+
+    @Override
+    public GatewayPayoutResult createPayout(GatewayPayoutRequest request) {
+        log.info("Creating Razorpay payout. Fund Account Id: {}, Amount: {}",
+                request.getFundAccountId(), request.getAmount());
+
+        try {
+            JsonNode gatewayResponse = razorpayXRestClient.post()
+                    .uri("/payouts")
+                    .body(buildPayoutRequest(request))
+                    .retrieve()
+                    .onStatus(
+                            HttpStatusCode::isError,
+                            (requestData, responseData) -> {
+
+                                String errorBody =
+                                        new String(responseData.getBody().readAllBytes());
+
+                                log.error("Razorpay Payout API failed. Status: {}, Response: {}",
+                                        responseData.getStatusCode(), errorBody);
+
+                                throw buildGatewayException(errorBody, HttpStatus.BAD_GATEWAY);
+                            })
+                    .body(JsonNode.class);
+
+            if (gatewayResponse == null) {
+                throw new ApiException("Empty response received from Razorpay.",
+                        HttpStatus.BAD_GATEWAY);
+            }
+            GatewayPayoutResponse response =
+                    objectMapper.treeToValue(gatewayResponse, GatewayPayoutResponse.class);
+
+            log.info("Razorpay payout created successfully. Payout Id: {}",
+                    response.getId());
+
+            return GatewayPayoutResult.builder()
+                    .response(response)
+                    .gatewayResponse(gatewayResponse)
+                    .build();
+        }
+        catch (ApiException exception) {
+
+            throw exception;
+
+        }
+        catch (RestClientException exception) {
+            log.error("Failed to create Razorpay payout.", exception);
+            throw new ApiException(exception.getMessage(), HttpStatus.BAD_GATEWAY);
+        }
+        catch (Exception exception) {
+
+            log.error("Failed to parse Razorpay payout response.", exception);
+
+            throw new ApiException("Failed to parse Razorpay response.",
+                    HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private Map<String, Object> buildPayoutRequest(GatewayPayoutRequest request) {
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("account_number", request.getAccountNumber());
+        body.put("fund_account_id", request.getFundAccountId());
+        body.put("amount", request.getAmount());
+        body.put("currency", request.getCurrency());
+        body.put("mode", request.getMode());
+        body.put("purpose", request.getPurpose());
+        body.put("queue_if_low_balance", request.getQueueIfLowBalance());
+        body.put("reference_id", request.getReferenceId());
+        if (request.getNotes() != null) {
+            body.put("notes", request.getNotes());
+        }
+        return body;
+    }
+
+    private ApiException buildGatewayException(
+            String errorBody,
+            HttpStatus status) throws JsonProcessingException {
+
+        JsonNode errorNode = objectMapper.readTree(errorBody);
+
+        String message = errorNode.path("error")
+                .path("description")
+                .asText("Gateway Error");
+
+        String field = errorNode.path("error")
+                .path("field")
+                .asText();
+
+        Map<String, String> errors = new HashMap<>();
+
+        if (!field.isBlank()) {
+            errors.put(field, message);
+        }
+
+        return new ApiException(message, status, errors);
+    }
+
+    @Override
+    public GatewayPayoutDetailsResponse fetchPayout(String gatewayPayoutId) {
+        log.info("Fetching Razorpay payout. Gateway Payout Id: {}", gatewayPayoutId);
+        try{
+            GatewayPayoutDetailsResponse response = razorpayXRestClient.get()
+                    .uri("/payouts/{id}", gatewayPayoutId)
+                    .retrieve()
+                    .onStatus(
+                            HttpStatusCode::isError,
+                            (requestData, responseData) -> {
+                                String errorBody = new String(responseData.getBody().readAllBytes());
+                                log.error("Failed to fetch Razorpay payout. Status: {}, Response: {}",
+                                        responseData.getStatusCode(), errorBody);
+                                throw buildGatewayException(errorBody, HttpStatus.BAD_GATEWAY);
+                            })
+                    .body(GatewayPayoutDetailsResponse.class);
+            if (response==null){
+                throw new ApiException("Empty response received from Razorpay.",
+                        HttpStatus.BAD_GATEWAY);
+            }
+            log.info("Fetched Razorpay payout successfully. Gateway Payout Id: {}", response.getId());
+            return response;
+        }
+        catch (ApiException exception) {
+
+            throw exception;
+
+        }
+        catch (RestClientException exception) {
+
+            log.error(
+                    "Failed to fetch Razorpay payout.",
+                    exception);
+
+            throw new ApiException(
+                    "Failed to fetch Razorpay payout.",
+                    HttpStatus.BAD_GATEWAY);
+
+        }
+        catch (Exception exception) {
+
+            log.error(
+                    "Failed to parse Razorpay payout response.",
+                    exception);
+
+            throw new ApiException(
+                    "Failed to parse Razorpay payout response.",
+                    HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 
 
