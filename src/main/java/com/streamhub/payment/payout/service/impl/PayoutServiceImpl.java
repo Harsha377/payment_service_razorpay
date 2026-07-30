@@ -29,6 +29,10 @@ import com.streamhub.payment.payout.mapper.PayoutMapper;
 import com.streamhub.payment.payout.repository.PayoutEventRepository;
 import com.streamhub.payment.payout.repository.PayoutRepository;
 import com.streamhub.payment.payout.service.PayoutService;
+import com.streamhub.payment.wallet.entity.WalletEntity;
+import com.streamhub.payment.wallet.entity.WalletHoldEntity;
+import com.streamhub.payment.wallet.enums.WalletHoldStatus;
+import com.streamhub.payment.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -51,6 +55,7 @@ public class PayoutServiceImpl implements PayoutService {
     private final PayoutMapper payoutMapper;
     private final GatewayPayoutMapper gatewayPayoutMapper;
     private final RazorpayService razorpayService;
+    private final WalletService walletService;
 
     @Override
     public CreatePayoutResponse createPayout(CreatePayoutRequest request, String idempotencyKey) {
@@ -63,17 +68,45 @@ public class PayoutServiceImpl implements PayoutService {
 
         BeneficiaryEntity beneficiary = findBeneficiary(request);
         FundAccountEntity fundAccount = findDefaultFundAccount(beneficiary);
+        WalletEntity wallet = findWallet(beneficiary);
+        WalletHoldEntity walletHold =
+                walletService.createWalletHold(wallet, request.getAmount());
 
         PayoutEntity payout = createPayoutEntity(request, idempotencyKey, beneficiary, fundAccount);
         payout = savePayout(payout);
 
-        GatewayPayoutResult gatewayResult = createGatewayPayout(request, fundAccount, payout);
-        log.info("Gateway payout created. Payout Reference: {}, Gateway Payout Id: {}, Status: {}",
-                payout.getPayoutReference(),
-                gatewayResult.getResponse().getId(), gatewayResult.getResponse().getStatus());
+        try {
+            GatewayPayoutResult gatewayResult = createGatewayPayout(request, fundAccount, payout);
+            log.info("Gateway payout created. Payout Reference: {}, Gateway Payout Id: {}, Status: {}",
+                    payout.getPayoutReference(),
+                    gatewayResult.getResponse().getId(), gatewayResult.getResponse().getStatus());
 
-        payout=updatePayout(payout,gatewayResult);
-        createPayoutEvent(payout,gatewayResult);
+            payout = updatePayout(payout, gatewayResult);
+
+            if (payout.getStatus() == PayoutStatus.FAILED
+                    || payout.getStatus() == PayoutStatus.CANCELLED
+                    || payout.getStatus() == PayoutStatus.REVERSED) {
+
+                walletService.cancelWalletHoldBeforePayout(walletHold);
+
+                throw new ConflictException(
+                        "Gateway payout creation failed.");
+            }
+
+            walletHold = walletService.attachPayoutToWalletHold(walletHold, payout);
+            walletService.createPayoutWalletTransaction(walletHold, payout);
+
+            createPayoutEvent(payout, gatewayResult);
+        }
+        catch (Exception ex) {
+
+            if (walletHold.getPayout() == null && walletHold.getStatus() == WalletHoldStatus.ACTIVE) {
+
+                walletService.cancelWalletHoldBeforePayout(walletHold);
+            }
+
+            throw ex;
+        }
         log.info("Payout created successfully. Payout Reference: {}, Status: {}",
                 payout.getPayoutReference(), payout.getStatus());
 
@@ -290,6 +323,28 @@ public class PayoutServiceImpl implements PayoutService {
         log.info("Payout event created successfully. Payout Reference: {}, Event Type: {}",
                 payout.getPayoutReference(), payoutEvent.getEventType());
 
+        WalletHoldEntity walletHold =
+                walletService.findWalletHoldByPayout(payout);
+
+        switch (status) {
+
+            case PROCESSED ->
+                    walletService.releaseWalletHold(walletHold);
+
+            case FAILED,
+                 REVERSED,
+                 CANCELLED ->
+                    walletService.cancelWalletHold(walletHold);
+
+            default -> {
+                // CREATED, PENDING, PROCESSING
+            }
+        }
+
+    }
+    private WalletEntity findWallet(BeneficiaryEntity beneficiary) {
+
+        return walletService.findWalletByBeneficiary(beneficiary);
     }
 
 

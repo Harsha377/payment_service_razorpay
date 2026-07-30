@@ -37,13 +37,19 @@ Pay-In
 Platform Account
 │
 ▼
-Wallet Balance
+Settlement
 │
 ▼
-Vendor  clicks Withdraw
+Wallet
 │
 ▼
-Payout
+Nutritionist Clicks Withdraw
+│
+▼
+Wallet Hold
+│
+▼
+Create Payout
 │
 ▼
 Bank / UPI
@@ -317,68 +323,84 @@ Payout Event
 
 POST /api/v1/payouts
 
-↓
-
+        │
+        ▼
 Validate Request
 
-↓
-
+        │
+        ▼
 Validate Idempotency Key
 
-↓
-
+        │
+        ▼
 Find Beneficiary
 
-↓
+        │
+        ▼
+Beneficiary ACTIVE ?
 
-Beneficiary ACTIVE?
+        │
+        ▼
+Find Wallet
 
-↓
+        │
+        ▼
+Validate Available Balance
 
-Find Default ACTIVE Fund Account
+        │
+        ▼
+Create Wallet Hold
 
-↓
+        │
+        ▼
+Find Default Fund Account
 
+        │
+        ▼
 Create Payout Entity
 
-↓
-
+        │
+        ▼
 Save CREATED
 
-↓
-
+        │
+        ▼
 Create Gateway Request
 
-↓
-
+        │
+        ▼
 Gateway Mapper
 
-↓
-
+        │
+        ▼
 RestClient
 
-↓
-
+        │
+        ▼
 RazorpayX
 
-↓
-
+        │
+        ▼
 Gateway Response
 
-↓
-
+        │
+        ▼
 Update Payout
 
-↓
+        │
+        ▼
+Attach Payout To Wallet Hold
 
-Store Raw Gateway Response
+        │
+        ▼
+Create Wallet Transaction
 
-↓
-
+        │
+        ▼
 Create Payout Event
 
-↓
-
+        │
+        ▼
 Return Response
 
 ---
@@ -441,6 +463,14 @@ findBeneficiary()
 
 ↓
 
+findWallet()
+
+↓
+
+createWalletHold()
+
+↓
+
 findDefaultFundAccount()
 
 ↓
@@ -458,6 +488,14 @@ createGatewayPayout()
 ↓
 
 updatePayout()
+
+↓
+
+attachPayoutToWalletHold()
+
+↓
+
+createPayoutWalletTransaction()
 
 ↓
 
@@ -701,6 +739,65 @@ This provides a complete immutable audit history.
 
 ---
 
+# Wallet Integration
+
+The payout module is tightly integrated with the Wallet module to ensure that beneficiary balances remain accurate throughout the payout lifecycle.
+
+Instead of immediately deducting money from the wallet, the platform first reserves the requested amount using a wallet hold.
+
+This prevents duplicate payout requests and ensures that the same balance cannot be used simultaneously by multiple payout requests.
+
+The payout lifecycle consists of the following steps:
+
+```
+Beneficiary Requests Payout
+        │
+        ▼
+Find Wallet
+        │
+        ▼
+Create Wallet Hold
+        │
+        ▼
+Create Payout
+        │
+        ▼
+Attach Payout To Wallet Hold
+        │
+        ▼
+Create Wallet Transaction
+        │
+        ▼
+Wait For Webhook
+        │
+        ├───────────────┐
+        ▼               ▼
+Payout Success     Payout Failed
+        │               │
+        ▼               ▼
+Release Hold     Cancel Hold
+```
+
+This design guarantees that beneficiary balances remain consistent even if the payment gateway is temporarily unavailable or the payout fails.
+
+## Wallet Tables Used
+
+Although the payout module owns only the payout tables, it also interacts with the Wallet module.
+
+The payout process updates the following wallet tables:
+
+### wallets
+
+Stores the beneficiary's current balances.
+
+### wallet_holds
+
+Stores reserved balances before a payout is processed.
+
+### wallet_transactions
+
+Stores immutable debit records for every payout.
+
 # 21. Folder Structure
 
 payout
@@ -729,24 +826,51 @@ payout
 
 # 22. Future Enhancements
 
-Wallet Balance Validation
+Webhook Synchronization Improvements
 
-Webhook Synchronization
+Scheduled Hold Expiry Cleanup
 
 Retry Failed Payouts
 
 Scheduled Reconciliation
 
-List Payouts
-
-Get Payout Details
-
-Cancel Payout
-
-Webhook Signature Verification
+Bulk Payout Support
 
 Dashboard Reports
 
-Bulk Payout Support
+Multi-Gateway Support
 
-Multiple Payment Gateways
+Delayed Payout Scheduling
+
+Partial Payout Support
+
+
+# Payout Lifecycle
+
+```
+CREATED
+    │
+    ▼
+PENDING
+    │
+    ▼
+PROCESSING
+    │
+    ├───────────────┐
+    ▼               ▼
+PROCESSED        FAILED
+                     │
+                     ▼
+                 CANCELLED
+```
+
+Wallet actions during each stage
+
+| Status     | Wallet Action       |
+|------------|---------------------|
+| CREATED    | Create Wallet Hold  |
+| PENDING    | No Change           |
+| PROCESSING | No Change           |
+| PROCESSED  | Release Wallet Hold |
+| FAILED     | Cancel Wallet Hold  |
+| CANCELLED  | Cancel Wallet Hold  |
