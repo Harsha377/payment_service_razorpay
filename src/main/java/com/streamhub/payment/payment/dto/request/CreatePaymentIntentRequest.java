@@ -1,5 +1,6 @@
 package com.streamhub.payment.payment.dto.request;
 
+import com.streamhub.payment.payment.enums.PaymentFlowType;
 import jakarta.validation.constraints.*;
 import lombok.*;
 
@@ -27,5 +28,10 @@ public class CreatePaymentIntentRequest {
 
     @Size(max = 255, message = "Description must not exceed 255 characters")
     private String description;
+
+    @NotNull(message = "payment flow type is required.")
+    private PaymentFlowType paymentFlowType;
+
+    private String settlementBeneficiaryReference;
 
 }

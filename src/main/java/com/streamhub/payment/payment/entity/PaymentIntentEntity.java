@@ -2,6 +2,7 @@ package com.streamhub.payment.payment.entity;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.streamhub.payment.common.entity.BaseEntity;
+import com.streamhub.payment.payment.enums.PaymentFlowType;
 import com.streamhub.payment.payment.enums.PaymentIntentStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -35,6 +36,13 @@ public class PaymentIntentEntity extends BaseEntity {
 
     @Column(name = "customer_reference", nullable = false, length = 26)
     private String customerReference;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_flow_type", nullable = false, length = 20)
+    private PaymentFlowType paymentFlowType;
+
+    @Column(name = "settlement_beneficiary_reference", length = 26)
+    private String settlementBeneficiaryReference;
 
     @Column(name = "amount", nullable = false)
     private Long amount;

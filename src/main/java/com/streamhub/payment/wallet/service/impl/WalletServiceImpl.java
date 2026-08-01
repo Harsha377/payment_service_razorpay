@@ -1,8 +1,8 @@
 package com.streamhub.payment.wallet.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.streamhub.payment.beneficiary.entity.BeneficiaryEntity;
 import com.streamhub.payment.common.constants.CurrencyConstants;
+import com.streamhub.payment.common.exception.BadRequestException;
 import com.streamhub.payment.common.exception.ConflictException;
 import com.streamhub.payment.common.exception.ResourceNotFoundException;
 import com.streamhub.payment.common.util.UlidGenerator;
@@ -34,33 +34,45 @@ public class WalletServiceImpl implements WalletService {
     private final WalletHoldRepository walletHoldRepository;
 
     @Override
-    public WalletEntity createWallet(BeneficiaryEntity beneficiary) {
-       log.info("Creating wallet for Beneficiary Reference: {}",beneficiary.getBeneficiaryReference());
-       validateBeneficiary(beneficiary);
-       validateWalletNotExists(beneficiary);
-       WalletEntity wallet =buildWallet(beneficiary);
-       wallet=saveWallet(wallet);
-       log.info("Wallet created successfully. Wallet Reference: {}, Beneficiary Reference: {}",
-               wallet.getWalletReference(),
-               beneficiary.getBeneficiaryReference());
-       return wallet;
+    public WalletEntity createWallet(String ownerReference, WalletOwnerType ownerType) {
+        log.info("Creating wallet. Owner Reference: {}, Owner Type: {}", ownerReference, ownerType);
+        validateOwner(ownerReference, ownerType);
+        validateWalletNotExists(ownerReference, ownerType);
+        WalletEntity wallet = buildWallet(ownerReference, ownerType);
+        wallet = saveWallet(wallet);
+        log.info("Wallet created successfully. Wallet Reference: {}, Owner Reference: {}, Owner Type: {}",
+                wallet.getWalletReference(),
+                ownerReference,
+                ownerType);
+        return wallet;
     }
 
-    private void validateBeneficiary(BeneficiaryEntity beneficiary){
-        if (beneficiary==null){
-            throw new ResourceNotFoundException("Beneficiary not found.");
+    @Override
+    public WalletEntity getOrCreateWallet(String ownerReference, WalletOwnerType ownerType) {
+        validateOwner(ownerReference, ownerType);
+        return walletRepository.findByOwnerReferenceAndOwnerType(ownerReference, ownerType)
+                .orElseGet(() -> createWallet(ownerReference, ownerType));
+    }
+
+    private void validateOwner(String ownerReference, WalletOwnerType ownerType){
+        if (ownerReference == null || ownerReference.isBlank()){
+            throw new BadRequestException("Wallet owner reference is required.");
+        }
+        if (ownerType == null){
+            throw new BadRequestException("Wallet owner type is required.");
         }
     }
-    private void validateWalletNotExists(BeneficiaryEntity beneficiary){
-        if (walletRepository.existsByBeneficiary(beneficiary)){
-            throw new ConflictException("Wallet already exists for beneficiary.");
+    private void validateWalletNotExists(String ownerReference, WalletOwnerType ownerType){
+        if (walletRepository.existsByOwnerReferenceAndOwnerType(ownerReference, ownerType)){
+            throw new ConflictException("Wallet already exists for owner.");
         }
     }
 
-    private WalletEntity buildWallet(BeneficiaryEntity beneficiary){
+    private WalletEntity buildWallet(String ownerReference, WalletOwnerType ownerType){
         return WalletEntity.builder()
                 .walletReference(UlidGenerator.generate())
-                .beneficiary(beneficiary)
+                .ownerReference(ownerReference)
+                .ownerType(ownerType)
                 .availableBalance(0L)
                 .pendingBalance(0L)
                 .totalCredited(0L)
@@ -76,7 +88,7 @@ public class WalletServiceImpl implements WalletService {
     }
 
     @Override
-    public WalletEntity  creditWallet(WalletEntity wallet, Long amount, WalletTransactionSource transactionSource, WalletReferenceType referenceType, String referenceId, String description, JsonNode metadata) {
+    public void creditWallet(WalletEntity wallet, Long amount, WalletTransactionSource transactionSource, WalletReferenceType referenceType, String referenceId, String description, JsonNode metadata) {
 
         log.info("Crediting wallet. Wallet Reference: {}, Amount: {}",
                 wallet.getWalletReference(), amount);
@@ -99,8 +111,6 @@ public class WalletServiceImpl implements WalletService {
         log.info("Wallet credited successfully. Wallet Reference: {}, Available Balance: {}",
                 wallet.getWalletReference(),
                 wallet.getAvailableBalance());
-
-        return wallet;
 
     }
 
@@ -132,7 +142,7 @@ public class WalletServiceImpl implements WalletService {
             String referenceId, String description, JsonNode metadata) {
 
 
-    WalletTransactionEntity transaction = WalletTransactionEntity.builder()
+        WalletTransactionEntity transaction = WalletTransactionEntity.builder()
                 .walletTransactionReference(UlidGenerator.generate())
                 .wallet(wallet)
                 .transactionType(transactionType)
@@ -152,28 +162,28 @@ public class WalletServiceImpl implements WalletService {
 
     @Override
     public WalletEntity  debitWallet(WalletEntity wallet, Long amount,
-                            WalletTransactionSource transactionSource,
-                            WalletReferenceType referenceType,
-                            String referenceId, String description,
-                            JsonNode metadata) {
+                                     WalletTransactionSource transactionSource,
+                                     WalletReferenceType referenceType,
+                                     String referenceId, String description,
+                                     JsonNode metadata) {
         log.info("Debiting wallet. Wallet Reference: {}, amount: {}",wallet.getWalletReference(),amount);
         validateWallet(wallet);
         validateAmount(amount);
         validateAvailableBalance(wallet,amount);
-       Long balanceBefore =wallet.getAvailableBalance();
-       updateWalletForDebit(wallet,amount);
-       wallet=saveWallet(wallet);
-       createWalletTransaction(
-               wallet,
-               WalletTransactionType.DEBIT,
-               transactionSource,
-               amount,
-               balanceBefore,
-               wallet.getAvailableBalance(),
-               referenceType,
-               referenceId,
-               description,
-               metadata );
+        Long balanceBefore =wallet.getAvailableBalance();
+        updateWalletForDebit(wallet,amount);
+        wallet=saveWallet(wallet);
+        createWalletTransaction(
+                wallet,
+                WalletTransactionType.DEBIT,
+                transactionSource,
+                amount,
+                balanceBefore,
+                wallet.getAvailableBalance(),
+                referenceType,
+                referenceId,
+                description,
+                metadata );
 
         log.info("Wallet debited successfully. Wallet Reference: {}, Available Balance: {}",
                 wallet.getWalletReference(),
@@ -214,7 +224,7 @@ public class WalletServiceImpl implements WalletService {
 
         WalletHoldEntity walletHold = buildWalletHold(wallet, amount,
                 balanceBefore, balanceAfter);
-      walletHold=saveWalletHold(walletHold);
+        walletHold=saveWalletHold(walletHold);
 
         log.info("Wallet hold created successfully. Hold Reference: {}, Wallet Reference: {}",
                 walletHold.getWalletHoldReference(), wallet.getWalletReference());
@@ -423,8 +433,10 @@ public class WalletServiceImpl implements WalletService {
         }
     }
     @Override
-    public WalletEntity findWalletByBeneficiary(BeneficiaryEntity beneficiary) {
-        return walletRepository.findByBeneficiary(beneficiary).orElseThrow(()->new ResourceNotFoundException("Beneficiary not found."));
+    public WalletEntity findWalletByOwner(String ownerReference, WalletOwnerType ownerType) {
+        return walletRepository.findByOwnerReferenceAndOwnerType(ownerReference, ownerType)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Wallet not found for owner reference: " + ownerReference));
     }
 
     @Override

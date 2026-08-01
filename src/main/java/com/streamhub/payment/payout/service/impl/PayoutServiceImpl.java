@@ -32,6 +32,7 @@ import com.streamhub.payment.payout.service.PayoutService;
 import com.streamhub.payment.wallet.entity.WalletEntity;
 import com.streamhub.payment.wallet.entity.WalletHoldEntity;
 import com.streamhub.payment.wallet.enums.WalletHoldStatus;
+import com.streamhub.payment.wallet.enums.WalletOwnerType;
 import com.streamhub.payment.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -151,7 +152,7 @@ public class PayoutServiceImpl implements PayoutService {
                             log.warn("No active default fund account found for beneficiary. Reference: {}",
                                     beneficiary.getBeneficiaryReference());
                             return new ConflictException("No active default fund account found for the beneficiary.");
-                }
+                        }
 
                 );
     }
@@ -343,8 +344,14 @@ public class PayoutServiceImpl implements PayoutService {
 
     }
     private WalletEntity findWallet(BeneficiaryEntity beneficiary) {
-
-        return walletService.findWalletByBeneficiary(beneficiary);
+        // IMPORTANT: use ownerReference, not beneficiaryReference.
+        // ownerReference is the caller-supplied stable provider ID (e.g. the
+        // provider's platform user ID) - the same value settlement used as
+        // owner_reference on the wallet, known long before this Beneficiary
+        // row ever existed. beneficiaryReference is a ULID generated only at
+        // beneficiary-creation time, so it can never match an older wallet.
+        return walletService.findWalletByOwner(
+                beneficiary.getOwnerReference(), WalletOwnerType.PROVIDER);
     }
 
 

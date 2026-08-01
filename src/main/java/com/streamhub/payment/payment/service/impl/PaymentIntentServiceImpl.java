@@ -16,6 +16,7 @@ import com.streamhub.payment.payment.dto.request.CreatePaymentIntentRequest;
 import com.streamhub.payment.payment.dto.response.CreatePaymentIntentResponse;
 import com.streamhub.payment.payment.entity.PaymentEntity;
 import com.streamhub.payment.payment.entity.PaymentIntentEntity;
+import com.streamhub.payment.payment.enums.PaymentFlowType;
 import com.streamhub.payment.payment.enums.PaymentIntentStatus;
 import com.streamhub.payment.payment.mapper.PaymentMapper;
 import com.streamhub.payment.payment.repository.PaymentIntentRepository;
@@ -52,6 +53,7 @@ public class PaymentIntentServiceImpl implements PaymentIntentService {
                 request.getOrderReference(), idempotencyKey);
         // Validate Request
         validateRequest(request);
+        validatePaymentFlow(request);
 
         // Generate Request Hash
         String requestHash = hashGenerator.generateSha256(request);
@@ -59,6 +61,7 @@ public class PaymentIntentServiceImpl implements PaymentIntentService {
         // Check Existing Idempotency Key
         Optional<IdempotencyKeyEntity> existingIdempotency =
                 idempotencyService.findByIdempotencyKey(idempotencyKey);
+        System.out.println("existing idempotency: "+existingIdempotency);
 
         if (existingIdempotency.isPresent()) {
 
@@ -130,7 +133,7 @@ public class PaymentIntentServiceImpl implements PaymentIntentService {
         if (!"INR".equals(request.getCurrency())) {
             throw new BadRequestException("Currently only INR currency is supported.");
         }
-        paymentIntentRepository.findByPaymentIntentReference(request.getOrderReference())
+        paymentIntentRepository.findByOrderReference(request.getOrderReference())
                 .ifPresent(paymentIntent -> {
                     throw new ConflictException("A payment intent already exists for this order.");
                 });
@@ -146,6 +149,10 @@ public class PaymentIntentServiceImpl implements PaymentIntentService {
         entity.setDescription(request.getDescription());
         entity.setStatus(PaymentIntentStatus.CREATED);
         entity.setExpiresAt(OffsetDateTime.now().plusMinutes(15));
+        entity.setPaymentFlowType(request.getPaymentFlowType());
+        entity.setSettlementBeneficiaryReference(
+                request.getSettlementBeneficiaryReference() == null
+                        ? null : request.getSettlementBeneficiaryReference().trim());
         return entity;
     }
 
@@ -155,5 +162,30 @@ public class PaymentIntentServiceImpl implements PaymentIntentService {
                 .amount(paymentIntent.getAmount())
                 .currency(paymentIntent.getCurrency())
                 .build();
+    }
+
+    private void validatePaymentFlow(CreatePaymentIntentRequest request) {
+
+        String settlementBeneficiaryReference =
+                request.getSettlementBeneficiaryReference();
+
+        if (request.getPaymentFlowType() == PaymentFlowType.MARKETPLACE) {
+
+            if (settlementBeneficiaryReference == null
+                    || settlementBeneficiaryReference.isBlank()) {
+
+                throw new BadRequestException(
+                        "Settlement beneficiary reference is required for marketplace payments.");
+            }
+
+        } else if (request.getPaymentFlowType() == PaymentFlowType.DIRECT) {
+
+            if (settlementBeneficiaryReference != null
+                    && !settlementBeneficiaryReference.isBlank()) {
+
+                throw new BadRequestException(
+                        "Settlement beneficiary reference is not allowed for direct payments.");
+            }
+        }
     }
 }

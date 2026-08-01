@@ -12,6 +12,7 @@ import com.streamhub.payment.payment.dto.response.PaymentResponse;
 import com.streamhub.payment.payment.dto.response.VerifyPaymentResponse;
 import com.streamhub.payment.payment.entity.PaymentEntity;
 import com.streamhub.payment.payment.entity.PaymentIntentEntity;
+import com.streamhub.payment.payment.enums.PaymentFlowType;
 import com.streamhub.payment.payment.enums.PaymentGateway;
 import com.streamhub.payment.payment.enums.PaymentIntentStatus;
 import com.streamhub.payment.payment.enums.PaymentStatus;
@@ -19,6 +20,7 @@ import com.streamhub.payment.payment.repository.PaymentIntentRepository;
 import com.streamhub.payment.payment.repository.PaymentRepository;
 import com.streamhub.payment.payment.service.PaymentEventService;
 import com.streamhub.payment.payment.service.PaymentService;
+import com.streamhub.payment.settlement.service.SettlementService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,6 +37,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final RazorpayService razorpayService;
     private final PaymentIntentRepository paymentIntentRepository;
     private final PaymentEventService paymentEventService;
+    private final SettlementService settlementService;
 
     @Override
     @Transactional
@@ -134,8 +137,11 @@ public class PaymentServiceImpl implements PaymentService {
     public PaymentEntity  completePayment(PaymentEntity payment, String gatewayPaymentId, String gatewaySignature) {
         log.info(  "Completing payment. Payment Reference: {}, Gateway Order Id: {}",
                 payment.getPaymentReference(), payment.getGatewayOrderId());
+        log.info(  "razorpay payment. gateway Payment Id: {}, gateway Signature: {}",
+                gatewayPaymentId, gatewaySignature);
         // Fetch latest payment details from Razorpay
         GatewayPaymentDetailsResponse  gatewayDetails =razorpayService.fetchPayment(gatewayPaymentId);
+        log.info("razorpay data : {}",gatewayDetails);
         OffsetDateTime now=OffsetDateTime.now();
         //Update Payment
         payment.setGatewayPaymentId(gatewayPaymentId);
@@ -161,6 +167,13 @@ public class PaymentServiceImpl implements PaymentService {
         paymentEventService.recordPaymentSuccess(payment);
         log.info("Payment success event recorded. Payment Reference: {}",
                 payment.getPaymentReference());
+
+        if (paymentIntent.getPaymentFlowType() == PaymentFlowType.MARKETPLACE) {
+
+            log.info("Creating settlement for payment reference: {}", payment.getPaymentReference());
+            settlementService.createSettlement(
+                    payment, paymentIntent.getSettlementBeneficiaryReference());
+        }
 
         return payment;
     }

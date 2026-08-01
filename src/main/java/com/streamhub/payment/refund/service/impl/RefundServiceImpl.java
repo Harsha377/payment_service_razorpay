@@ -26,6 +26,11 @@ import com.streamhub.payment.refund.mapper.RefundMapper;
 import com.streamhub.payment.refund.repository.RefundRepository;
 import com.streamhub.payment.refund.service.RefundEventService;
 import com.streamhub.payment.refund.service.RefundService;
+import com.streamhub.payment.wallet.entity.WalletEntity;
+import com.streamhub.payment.wallet.enums.WalletOwnerType;
+import com.streamhub.payment.wallet.enums.WalletReferenceType;
+import com.streamhub.payment.wallet.enums.WalletTransactionSource;
+import com.streamhub.payment.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -49,6 +54,7 @@ public class RefundServiceImpl implements RefundService {
     private final RefundMapper refundMapper;
     private final HashGenerator hashGenerator;
     private final IdempotencyService idempotencyService;
+    private final WalletService walletService;
 
 
     @Override
@@ -191,9 +197,37 @@ public class RefundServiceImpl implements RefundService {
                 RefundEventSource.WEBHOOK,
                 gatewayDetails.getGatewayResponse());
 
+        creditCustomerWalletForRefund(completedRefund);
+
         log.info("Refund completed successfully. Refund Reference: {}",
                 completedRefund.getRefundReference());
         return completedRefund;
+    }
+
+    /**
+     * Credits the refunded amount to the paying customer's wallet.
+     * The customer's wallet is looked up/created purely by their
+     * customerReference - no beneficiary is required for a customer
+     * to have a wallet.
+     */
+    private void creditCustomerWalletForRefund(RefundEntity refund) {
+        String customerReference = refund.getPayment().getPaymentIntent().getCustomerReference();
+
+        WalletEntity customerWallet =
+                walletService.getOrCreateWallet(customerReference, WalletOwnerType.CUSTOMER);
+
+        walletService.creditWallet(
+                customerWallet,
+                refund.getAmount(),
+                WalletTransactionSource.REFUND,
+                WalletReferenceType.REFUND,
+                refund.getRefundReference(),
+                "Refund credit for payment " + refund.getPayment().getPaymentReference(),
+                refund.getMetadata()
+        );
+
+        log.info("Customer wallet credited for refund. Refund Reference: {}, Customer Reference: {}, Amount: {}",
+                refund.getRefundReference(), customerReference, refund.getAmount());
     }
 
     @Override

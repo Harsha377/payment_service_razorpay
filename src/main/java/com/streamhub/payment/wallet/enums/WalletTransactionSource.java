@@ -4,7 +4,8 @@ public enum WalletTransactionSource {
     PAYMENT,
     PAYOUT,
     REFUND,
-    ADJUSTMENT
+    ADJUSTMENT,
+    SETTLEMENT
 }
 
 

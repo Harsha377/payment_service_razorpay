@@ -5,5 +5,6 @@ public enum WalletReferenceType {
     PAYMENT,
     PAYOUT,
     REFUND,
-    WALLET_HOLD
+    WALLET_HOLD,
+    SETTLEMENT
 }
